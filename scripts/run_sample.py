@@ -51,12 +51,16 @@ def score_bar(score: float) -> str:
 
 
 def call_model(client, system: str, user: str, model: str, temperature: float) -> dict | None:
-    """Chama messages.create e retorna o resultado parseado, ou None em caso de erro."""
+    """Chama messages.create e retorna o resultado parseado, ou None em caso de erro.
+
+    Mesmo formato de cache_control usado em batch_utils.make_request — engata o
+    caching no Sonnet (Pass 3) e mantém os dois caminhos (batch + sync) em sincronia.
+    """
     resp = client.messages.create(
         model=model,
         max_tokens=512,
         temperature=temperature,
-        system=system,
+        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user}],
     )
     return parse_response(resp.content[0].text)
