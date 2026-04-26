@@ -116,13 +116,22 @@ def make_request(
     if context_note:
         user_content = context_note + "\n\n" + user_content
 
+    # System prompt é idêntico em todas as ~22k requisições. Marcado para
+    # prompt caching para reduzir custo/latência sempre que o prefixo atingir
+    # o mínimo cacheável do modelo (Sonnet 4.6: 2048 tokens; Haiku 4.5: 4096).
     return {
         "custom_id": custom_id(row),
         "params": {
             "model":       model,
             "max_tokens":  512,
             "temperature": temperature,
-            "system":      system,
+            "system":      [
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             "messages":    [{"role": "user", "content": user_content}],
         },
     }
