@@ -218,7 +218,10 @@ def load_jsonl_results(pass_n: int) -> dict[str, dict]:
                 scores[cid] = parsed
             else:
                 n_errors += 1
-    print(f"  Pass {pass_n}: {len(scores):,} válidos, {n_errors:,} erros/unparseable")
+    total = len(scores) + n_errors
+    pct = (n_errors / total * 100) if total else 0.0
+    warn = "  ⚠️  TAXA ALTA — inspecione data/raw_results/" if pct > 5 else ""
+    print(f"  Pass {pass_n}: {len(scores):,} válidos, {n_errors:,} erros/unparseable ({pct:.1f}%){warn}")
     return scores
 
 
