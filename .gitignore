@@ -1,0 +1,12 @@
+# dados de execução — não versionar estado de batch nem resultados brutos
+data/raw_results/
+data/interim/
+data/batch_state.json
+
+# bytecode
+scripts/__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
