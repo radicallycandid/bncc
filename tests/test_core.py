@@ -1,10 +1,24 @@
 """
 Testes das funções puras do pipeline.
-Sem chamadas de API, sem leitura de arquivos de dados.
+Sem chamadas de API, sem leitura de arquivos de dados de produção.
 """
+import json
+
 import pytest
 
-from batch_utils import LABEL_TO_SCORE, apply_consistency, decide, fill_user, parse_response
+import batch_utils
+from batch_utils import (
+    LABEL_TO_SCORE,
+    apply_consistency,
+    custom_id,
+    decide,
+    fill_user,
+    load_prompt,
+    load_state,
+    make_request,
+    parse_response,
+    save_state,
+)
 from build_pairs import candidate_pairs
 
 
@@ -74,6 +88,17 @@ class TestFillUser:
         }
         result = fill_user(tpl, row)
         assert "{{" not in result
+
+    def test_substituted_value_is_not_re_substituted(self):
+        # Se uma habilidade contém literalmente '{{ANO_B}}', a substituição em uma
+        # passada deve preservar o literal — .replace() encadeado faria a re-substituição
+        # e quebraria silenciosamente.
+        tpl = "{{HABILIDADE_A}} | ano={{ANO_B}}"
+        row = {
+            "ano_a": "1", "codigo_a": "X", "habilidade_a": "texto com {{ANO_B}} no meio",
+            "ano_b": "9", "codigo_b": "Y", "habilidade_b": "y",
+        }
+        assert fill_user(tpl, row) == "texto com {{ANO_B}} no meio | ano=9"
 
 
 # ---------------------------------------------------------------------------
@@ -231,3 +256,175 @@ class TestApplyConsistency:
         results = {"A__B": _result(0.75), "B__A": _result(0.75)}
         c, _ = apply_consistency(rows, results)
         assert "label" not in c["A__B"]
+
+    def test_missing_partner_skipped(self):
+        # delta=0 mas só o par A→B está em results; B→A ausente.
+        # A função deve não tentar corrigir nem crashar.
+        rows = [_row("A", 1, "B", 1)]
+        results = {"A__B": _result(0.75)}
+        c, n_corrected = apply_consistency(rows, results)
+        assert c["A__B"]["score"] == 0.75
+        assert "consistency" not in c["A__B"]
+        assert n_corrected == 0
+
+
+# ---------------------------------------------------------------------------
+# custom_id
+# ---------------------------------------------------------------------------
+
+class TestCustomId:
+    def test_format(self):
+        row = {"codigo_a": "EF01MA01", "codigo_b": "EF02MA01"}
+        assert custom_id(row) == "EF01MA01__EF02MA01"
+
+    def test_separator_is_double_underscore(self):
+        # custom_id é a chave usada pra correlacionar passes — o separador "__"
+        # precisa ser estável e não ambíguo (não pode aparecer dentro de um código BNCC).
+        row = {"codigo_a": "X", "codigo_b": "Y"}
+        assert custom_id(row).count("__") == 1
+
+
+# ---------------------------------------------------------------------------
+# make_request
+# ---------------------------------------------------------------------------
+
+def _request_row():
+    return {
+        "codigo_a": "EF01MA01", "ano_a": "1", "habilidade_a": "contar",
+        "codigo_b": "EF02MA01", "ano_b": "2", "habilidade_b": "somar",
+    }
+
+
+class TestMakeRequest:
+    def test_top_level_shape(self):
+        req = make_request(_request_row(), "S", "u", "haiku", 0.5)
+        assert set(req) == {"custom_id", "params"}
+        assert req["custom_id"] == "EF01MA01__EF02MA01"
+
+    def test_params_have_required_keys(self):
+        req = make_request(_request_row(), "S", "u", "haiku", 0.5)
+        params = req["params"]
+        assert params["model"] == "haiku"
+        assert params["temperature"] == 0.5
+        assert params["max_tokens"] == 512
+        assert "system" in params and "messages" in params
+
+    def test_system_is_cached_content_block(self):
+        # Locks in o fix de prompt caching: se alguém reverter para
+        # system=string_nua, este teste falha.
+        req = make_request(_request_row(), "SYSTEM PROMPT", "u", "haiku", 0)
+        sys_blocks = req["params"]["system"]
+        assert isinstance(sys_blocks, list) and len(sys_blocks) == 1
+        block = sys_blocks[0]
+        assert block["type"] == "text"
+        assert block["text"] == "SYSTEM PROMPT"
+        assert block["cache_control"] == {"type": "ephemeral"}
+
+    def test_user_template_is_filled(self):
+        req = make_request(_request_row(), "S", "{{CODIGO_A}} -> {{CODIGO_B}}", "h", 0)
+        assert req["params"]["messages"] == [
+            {"role": "user", "content": "EF01MA01 -> EF02MA01"}
+        ]
+
+    def test_context_note_prepended(self):
+        req = make_request(_request_row(), "S", "{{CODIGO_A}}", "h", 0,
+                           context_note="[contexto]")
+        content = req["params"]["messages"][0]["content"]
+        assert content == "[contexto]\n\nEF01MA01"
+
+    def test_no_context_note_no_prepend(self):
+        req = make_request(_request_row(), "S", "{{CODIGO_A}}", "h", 0)
+        assert req["params"]["messages"][0]["content"] == "EF01MA01"
+
+
+# ---------------------------------------------------------------------------
+# load_prompt
+# ---------------------------------------------------------------------------
+
+class TestLoadPrompt:
+    def test_extracts_two_fenced_blocks(self, tmp_path, monkeypatch):
+        prompt_file = tmp_path / "p.md"
+        prompt_file.write_text(
+            "# título\n\n## SYSTEM\n\n```\nconteúdo do system\n```\n\n"
+            "## USER\n\n```\nconteúdo do user\n```\n"
+        )
+        monkeypatch.setattr(batch_utils, "PROMPT_FILE", prompt_file)
+        sys_block, user_block = load_prompt()
+        assert sys_block == "conteúdo do system"
+        assert user_block == "conteúdo do user"
+
+    def test_raises_when_only_one_block(self, tmp_path, monkeypatch):
+        prompt_file = tmp_path / "p.md"
+        prompt_file.write_text("# título\n\n```\nsó um bloco\n```\n")
+        monkeypatch.setattr(batch_utils, "PROMPT_FILE", prompt_file)
+        with pytest.raises(ValueError, match="SYSTEM e USER"):
+            load_prompt()
+
+    def test_raises_when_no_blocks(self, tmp_path, monkeypatch):
+        prompt_file = tmp_path / "p.md"
+        prompt_file.write_text("# título sem fences\n")
+        monkeypatch.setattr(batch_utils, "PROMPT_FILE", prompt_file)
+        with pytest.raises(ValueError):
+            load_prompt()
+
+
+# ---------------------------------------------------------------------------
+# load_state / save_state
+# ---------------------------------------------------------------------------
+
+class TestLoadState:
+    def test_missing_file_returns_default(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(batch_utils, "STATE_FILE", tmp_path / "absent.json")
+        assert load_state() == {"batches": []}
+
+    def test_valid_state_loads(self, tmp_path, monkeypatch):
+        path = tmp_path / "state.json"
+        payload = {"batches": [{"pass": 1, "batch_id": "abc", "status": "in_progress"}]}
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        monkeypatch.setattr(batch_utils, "STATE_FILE", path)
+        assert load_state() == payload
+
+    def test_list_instead_of_dict_raises(self, tmp_path, monkeypatch):
+        path = tmp_path / "state.json"
+        path.write_text("[]", encoding="utf-8")
+        monkeypatch.setattr(batch_utils, "STATE_FILE", path)
+        with pytest.raises(ValueError, match="corrompido"):
+            load_state()
+
+    def test_missing_batches_key_raises(self, tmp_path, monkeypatch):
+        path = tmp_path / "state.json"
+        path.write_text(json.dumps({"foo": "bar"}), encoding="utf-8")
+        monkeypatch.setattr(batch_utils, "STATE_FILE", path)
+        with pytest.raises(ValueError, match="corrompido"):
+            load_state()
+
+    def test_batches_not_list_raises(self, tmp_path, monkeypatch):
+        path = tmp_path / "state.json"
+        path.write_text(json.dumps({"batches": "not a list"}), encoding="utf-8")
+        monkeypatch.setattr(batch_utils, "STATE_FILE", path)
+        with pytest.raises(ValueError, match="corrompido"):
+            load_state()
+
+
+class TestSaveState:
+    def test_round_trip(self, tmp_path, monkeypatch):
+        path = tmp_path / "state.json"
+        monkeypatch.setattr(batch_utils, "STATE_FILE", path)
+        original = {
+            "batches": [
+                {"pass": 1, "batch_id": "msgbatch_abc", "status": "in_progress",
+                 "submitted_at": "2026-04-26T00:00:00+00:00", "n_requests": 100,
+                 "results_file": None},
+            ]
+        }
+        save_state(original)
+        assert load_state() == original
+
+    def test_preserves_unicode(self, tmp_path, monkeypatch):
+        # ensure_ascii=False no save_state — verifica que acentos sobrevivem.
+        path = tmp_path / "state.json"
+        monkeypatch.setattr(batch_utils, "STATE_FILE", path)
+        save_state({"batches": [], "nota": "habilidade com não e ç"})
+        # Mesmo com a chave extra "nota", a leitura crua preserva o conteúdo
+        raw = path.read_text(encoding="utf-8")
+        assert "não" in raw and "ç" in raw
