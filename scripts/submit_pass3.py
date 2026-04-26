@@ -12,8 +12,8 @@ por conta própria tendo o contexto como referência).
 Também salva data/interim/pass2_scores.csv para auditoria.
 
 Uso:
-    python scripts/4_submit_pass3.py
-    (somente após 2_poll.py confirmar que todos os batches do Pass 2 foram baixados)
+    python scripts/submit_pass3.py
+    (somente após poll.py confirmar que todos os batches do Pass 2 foram baixados)
 """
 
 import csv
@@ -45,7 +45,7 @@ def main() -> None:
 
     p2_batches = [b for b in state["batches"] if b["pass"] == 2]
     if not p2_batches or any(b["status"] != "downloaded" for b in p2_batches):
-        print("Nem todos os batches do Pass 2 foram baixados. Rode 2_poll.py primeiro.")
+        print("Nem todos os batches do Pass 2 foram baixados. Rode poll.py primeiro.")
         return
 
     print("Carregando resultados dos Passes 1 e 2…")
@@ -94,7 +94,7 @@ def main() -> None:
     print(f"Pares escalados para Sonnet (Pass 3): {len(escalated):,}")
 
     if not escalated:
-        print("Nenhuma escalação. Pule para 5_assemble.py.")
+        print("Nenhuma escalação. Pule para assemble.py.")
         return
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
@@ -116,7 +116,7 @@ def main() -> None:
         )
 
     n = submit_batches(client, requests, pass_n=3, state=state)
-    print(f"\n{n} batch(es) submetido(s). Rode 2_poll.py novamente.")
+    print(f"\n{n} batch(es) submetido(s). Rode poll.py novamente.")
 
 
 if __name__ == "__main__":

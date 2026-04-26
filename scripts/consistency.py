@@ -30,8 +30,8 @@ Colunas adicionadas ao output:
 Output: data/prereq_pairs_final.csv
 
 Uso:
-    python scripts/6_consistency.py
-    (somente após 5_assemble.py ter gerado data/prereq_pairs_scored.csv)
+    python scripts/consistency.py
+    (somente após assemble.py ter gerado data/prereq_pairs_scored.csv)
 """
 
 import csv
@@ -46,7 +46,7 @@ OUTPUT = Path(__file__).parent.parent / "data" / "prereq_pairs_final.csv"
 def main() -> None:
     if not INPUT.exists():
         print(f"Arquivo de entrada não encontrado: {INPUT}")
-        print("Rode 5_assemble.py primeiro.")
+        print("Rode assemble.py primeiro.")
         return
 
     rows = list(csv.DictReader(INPUT.open(encoding="utf-8")))

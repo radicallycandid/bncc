@@ -8,11 +8,11 @@ Pass 1, aumenta a confiança; se discordar significativamente, o par é escalado
 Sonnet no Pass 3.
 
 Também salva data/interim/pass1_scores.csv com os resultados do Pass 1 para todos
-os pares (útil para auditoria e para o 5_assemble.py).
+os pares (útil para auditoria e para o assemble.py).
 
 Uso:
-    python scripts/3_submit_pass2.py
-    (somente após 2_poll.py confirmar que todos os batches do Pass 1 foram baixados)
+    python scripts/submit_pass2.py
+    (somente após poll.py confirmar que todos os batches do Pass 1 foram baixados)
 """
 
 import csv
@@ -45,7 +45,7 @@ def main() -> None:
 
     p1_batches = [b for b in state["batches"] if b["pass"] == 1]
     if not p1_batches or any(b["status"] != "downloaded" for b in p1_batches):
-        print("Nem todos os batches do Pass 1 foram baixados. Rode 2_poll.py primeiro.")
+        print("Nem todos os batches do Pass 1 foram baixados. Rode poll.py primeiro.")
         return
 
     print("Carregando resultados do Pass 1…")
@@ -81,7 +81,7 @@ def main() -> None:
     print(f"Pares borderline para Pass 2: {len(borderline_rows):,}")
 
     if not borderline_rows:
-        print("Nenhum borderline encontrado. Pule para 5_assemble.py.")
+        print("Nenhum borderline encontrado. Pule para assemble.py.")
         return
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
@@ -93,7 +93,7 @@ def main() -> None:
     ]
 
     n = submit_batches(client, requests, pass_n=2, state=state)
-    print(f"\n{n} batch(es) submetido(s). Rode 2_poll.py novamente.")
+    print(f"\n{n} batch(es) submetido(s). Rode poll.py novamente.")
 
 
 if __name__ == "__main__":

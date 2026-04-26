@@ -8,9 +8,9 @@ data/raw_results/ antes de qualquer processamento — isso garante idempotência
 se um script posterior falhar, não é necessário resubmeter o batch.
 
 Uso:
-    python scripts/2_poll.py
+    python scripts/poll.py
     # ou, para rodar a cada 60 s até tudo terminar:
-    watch -n 60 python scripts/2_poll.py
+    watch -n 60 python scripts/poll.py
 """
 
 import json
@@ -75,14 +75,14 @@ def _print_summary(state: dict) -> None:
     all_in_progress = [b for b in state["batches"] if b["status"] == "in_progress"]
 
     if all_in_progress:
-        print("\nAinda há batches em andamento. Rode 2_poll.py novamente em alguns minutos.")
+        print("\nAinda há batches em andamento. Rode poll.py novamente em alguns minutos.")
     elif 1 in passes_done and 2 not in passes_done:
-        print("\nPass 1 completo → rode 3_submit_pass2.py")
+        print("\nPass 1 completo → rode submit_pass2.py")
     elif 2 in passes_done and 3 not in passes_done:
-        print("\nPass 2 completo → rode 4_submit_pass3.py")
-        print("(se não houver escalações, rode diretamente 5_assemble.py)")
+        print("\nPass 2 completo → rode submit_pass3.py")
+        print("(se não houver escalações, rode diretamente assemble.py)")
     elif passes_done:
-        print("\nTodos os passes baixados → rode 5_assemble.py")
+        print("\nTodos os passes baixados → rode assemble.py")
 
 
 if __name__ == "__main__":

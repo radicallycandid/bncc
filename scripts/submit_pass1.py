@@ -6,8 +6,8 @@ Message Batches API (50 % de desconto vs. chamadas em tempo real).
 Os batch IDs ficam registrados em data/batch_state.json.
 
 Uso:
-    python scripts/1_submit_pass1.py            # todos os pares
-    python scripts/1_submit_pass1.py --limit 20 # teste com 20 pares
+    python scripts/submit_pass1.py            # todos os pares
+    python scripts/submit_pass1.py --limit 20 # teste com 20 pares
 """
 
 import argparse
@@ -56,7 +56,7 @@ def main() -> None:
     ]
 
     n = submit_batches(client, requests, pass_n=1, state=state)
-    print(f"\n{n} batch(es) submetido(s). Rode 2_poll.py para acompanhar.")
+    print(f"\n{n} batch(es) submetido(s). Rode poll.py para acompanhar.")
 
 
 if __name__ == "__main__":
