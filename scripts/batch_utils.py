@@ -141,20 +141,38 @@ def parse_response(text: str) -> dict | None:
     aqui com mapeamento fixo, garantindo consistência nas etapas de averaging.
     Scores intermediários (ex.: 0.125) só surgem de médias entre passes — nunca
     do modelo diretamente — e são o valor final: não precisam voltar a ser label.
+
+    Usa matching de colchetes para encontrar todos os objetos JSON no texto e
+    retorna o último válido (trata casos em que o modelo emite auto-correção
+    com dois blocos JSON, onde o segundo é o veredito final).
     """
     try:
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        if not m:
-            return None
-        data = json.loads(m.group(0))
-        if not {"reasoning", "label"}.issubset(data):
-            return None
-        if data["label"] not in VALID_LABELS:
-            return None
-        data["score"] = LABEL_TO_SCORE[data["label"]]
-        return data
-    except (json.JSONDecodeError, TypeError, KeyError):
-        return None
+        starts = [m.start() for m in re.finditer(r"\{", text)]
+        for start in reversed(starts):
+            depth, end = 0, -1
+            for i in range(start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+            if end == -1:
+                continue
+            try:
+                data = json.loads(text[start : end + 1])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not {"reasoning", "label"}.issubset(data):
+                continue
+            if data["label"] not in VALID_LABELS:
+                continue
+            data["score"] = LABEL_TO_SCORE[data["label"]]
+            return data
+    except (TypeError, KeyError):
+        pass
+    return None
 
 
 def load_jsonl_results(pass_n: int) -> dict[str, dict]:
