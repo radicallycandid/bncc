@@ -23,9 +23,11 @@ Interpretação:
 
 Colunas adicionadas ao output:
   consistency_flag:
-    "symmetric_corrected"  par delta=0 com simétrico encontrado → correção aplicada
-    "no_symmetric_pair"    par delta>0 → sem correção (impossível ter simétrico no dataset)
-    "source_missing"       par sem score do pipeline anterior
+    "symmetric_corrected"     par delta=0 com simétrico inconsistente → correção aplicada
+    "symmetric_consistent"    par delta=0 com simétrico, mas raw_ab + raw_ba ≤ 1.0 → sem correção
+    "symmetric_pair_missing"  par delta=0, mas o par simétrico não tem score utilizável
+    "no_symmetric_possible"   par delta>0 → impossível haver simétrico no dataset
+    "source_missing"          par sem score do pipeline anterior
 
 Output: data/prereq_pairs_final.csv
 
@@ -82,15 +84,20 @@ def main() -> None:
                 continue
 
             if int(row["ano_a"]) != int(row["ano_b"]):
-                flag = "no_symmetric_pair"
+                flag = "no_symmetric_possible"
                 writer.writerow({**row, "score": raw_ab, "consistency_flag": flag})
                 flag_counts[flag] += 1
                 continue
 
             raw_ba = raw_scores.get(key_ba)
-            if raw_ba is None or raw_ab + raw_ba <= 1.0:
-                # Sem simétrico ou sem inconsistência real — mantém score intacto
-                flag = "no_symmetric_pair"
+            if raw_ba is None:
+                flag = "symmetric_pair_missing"
+                writer.writerow({**row, "score": raw_ab, "consistency_flag": flag})
+                flag_counts[flag] += 1
+                continue
+            if raw_ab + raw_ba <= 1.0:
+                # Simétrico existe e é consistente — mantém score intacto
+                flag = "symmetric_consistent"
                 writer.writerow({**row, "score": raw_ab, "consistency_flag": flag})
                 flag_counts[flag] += 1
                 continue
