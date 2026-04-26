@@ -219,9 +219,15 @@ def load_jsonl_results(pass_n: int) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 def load_state() -> dict:
-    if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    return {"batches": []}
+    if not STATE_FILE.exists():
+        return {"batches": []}
+    state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    if not isinstance(state, dict) or not isinstance(state.get("batches"), list):
+        raise ValueError(
+            f"{STATE_FILE} corrompido: esperado dict com chave 'batches' (lista). "
+            f"Inspecione ou apague o arquivo para reiniciar do zero."
+        )
+    return state
 
 
 def save_state(state: dict) -> None:
