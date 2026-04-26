@@ -40,7 +40,7 @@ from batch_utils import (
     apply_consistency,
     custom_id,
     load_prompt,
-    fill_user,
+    make_request,
     parse_response,
 )
 
@@ -50,19 +50,22 @@ def score_bar(score: float) -> str:
     return "█" * filled + "░" * (5 - filled)
 
 
-def call_model(client, system: str, user: str, model: str, temperature: float) -> dict | None:
-    """Chama messages.create e retorna o resultado parseado, ou None em caso de erro.
+def call_model(
+    client,
+    row: dict,
+    system: str,
+    user_tpl: str,
+    model: str,
+    temperature: float,
+    context_note: str | None = None,
+) -> dict | None:
+    """Chama messages.create reusando o shape de make_request.
 
-    Mesmo formato de cache_control usado em batch_utils.make_request — engata o
-    caching no Sonnet (Pass 3) e mantém os dois caminhos (batch + sync) em sincronia.
+    Single source of truth: qualquer mudança no formato (cache_control, max_tokens,
+    context_note) propaga automaticamente do batch path pro sync path.
     """
-    resp = client.messages.create(
-        model=model,
-        max_tokens=512,
-        temperature=temperature,
-        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": user}],
-    )
+    req = make_request(row, system, user_tpl, model, temperature, context_note=context_note)
+    resp = client.messages.create(**req["params"])
     return parse_response(resp.content[0].text)
 
 
@@ -133,8 +136,7 @@ def run_two_pass(client, rows: list[dict], system: str, user_tpl: str, model_pri
     print(f"\n── Pass 1 ({model_primary}, temp=0) — {n} pares ──")
     for i, row in enumerate(rows, 1):
         cid = custom_id(row)
-        user = fill_user(user_tpl, row)
-        res = call_model(client, system, user, model_primary, temperature=0)
+        res = call_model(client, row, system, user_tpl, model_primary, temperature=0)
         if res:
             res["source"] = "pass1"
             results[cid] = res
@@ -154,8 +156,7 @@ def run_two_pass(client, rows: list[dict], system: str, user_tpl: str, model_pri
         print(f"\n── Pass 2 ({model_primary}, temp=0.5) — {len(borderlines)} borderlines ──")
         for i, row in enumerate(borderlines, 1):
             cid = custom_id(row)
-            user = fill_user(user_tpl, row)
-            res2 = call_model(client, system, user, model_primary, temperature=0.5)
+            res2 = call_model(client, row, system, user_tpl, model_primary, temperature=0.5)
             if not res2:
                 print(f"  [{i}] {cid} PARSE ERROR (mantendo Pass 1)")
                 continue
@@ -175,8 +176,8 @@ def run_two_pass(client, rows: list[dict], system: str, user_tpl: str, model_pri
                     f"Julgamento 2: {res2['label']} ({s2}) — \"{res2['reasoning']}\"\n"
                     "Avalie independentemente.]"
                 )
-                user3 = note + "\n\n" + fill_user(user_tpl, row)
-                res3 = call_model(client, system, user3, MODEL_SECONDARY, temperature=0)
+                res3 = call_model(client, row, system, user_tpl, MODEL_SECONDARY,
+                                  temperature=0, context_note=note)
                 if res3:
                     results[cid] = {**res3, "source": "pass3"}
                     action = f"→ Sonnet: {res3['label']}"
