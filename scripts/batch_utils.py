@@ -79,15 +79,23 @@ def load_prompt() -> tuple[str, str]:
 
 
 def fill_user(template: str, row: dict) -> str:
-    """Substitui as variáveis {{...}} no template USER com os dados do par."""
-    return (
-        template
-        .replace("{{ANO_A}}",        str(row["ano_a"]))
-        .replace("{{CODIGO_A}}",     row["codigo_a"])
-        .replace("{{HABILIDADE_A}}", row["habilidade_a"])
-        .replace("{{ANO_B}}",        str(row["ano_b"]))
-        .replace("{{CODIGO_B}}",     row["codigo_b"])
-        .replace("{{HABILIDADE_B}}", row["habilidade_b"])
+    """Substitui as variáveis {{...}} no template USER com os dados do par.
+
+    Uma única passada via regex: o conteúdo substituído nunca é re-processado, então
+    uma habilidade que contenha literalmente '{{ANO_B}}' não vira fonte de bug.
+    """
+    values = {
+        "{{ANO_A}}":        str(row["ano_a"]),
+        "{{CODIGO_A}}":     row["codigo_a"],
+        "{{HABILIDADE_A}}": row["habilidade_a"],
+        "{{ANO_B}}":        str(row["ano_b"]),
+        "{{CODIGO_B}}":     row["codigo_b"],
+        "{{HABILIDADE_B}}": row["habilidade_b"],
+    }
+    return re.sub(
+        "|".join(re.escape(k) for k in values),
+        lambda m: values[m.group(0)],
+        template,
     )
 
 
