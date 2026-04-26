@@ -3,8 +3,9 @@ data/raw_results/
 data/interim/
 data/batch_state.json
 
-# bytecode
+# bytecode / build artifacts
 scripts/__pycache__/
+scripts/*.egg-info/
 *.pyc
 *.pyo
 
