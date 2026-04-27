@@ -56,11 +56,15 @@ fetch_skills.py
 ### `batch_utils.py` — shared library
 
 Installed as an editable package (`pip install -e .`), so it's importable by both scripts and tests without path manipulation. Contains:
-- Constants: model names, `LABEL_TO_SCORE`, `BORDERLINE_LABELS`, `ESCALATION_THRESHOLD`
+- Constants: model names, `LABEL_TO_SCORE`, `BORDERLINE_LABELS`, `ESCALATION_THRESHOLD`, `BATCH_SIZE`
 - Path definitions: `PAIRS_CSV`, `STATE_FILE`, `RAW_DIR`, `INTERIM_DIR`, `PROMPT_FILE`
-- `load_prompt()` / `fill_user()` — parses `prompts/prereq_judge.md` and substitutes `{{...}}` variables
-- `make_request()` / `submit_batches()` — Anthropic Message Batches API wrappers
-- `parse_response()` — extracts `{reasoning, label}` JSON from model output; derives `score` from `LABEL_TO_SCORE` (the model never produces a numeric score directly)
+- `load_prompt()` / `fill_user()` — parses `prompts/prereq_judge.md` and substitutes `{{...}}` variables; `fill_user()` is single-pass (regex) so substituted values are never re-processed
+- `custom_id(row)` — returns `{codigo_a}__{codigo_b}`; stable key used to correlate results across all passes
+- `make_request(row, system, user_template, model, temperature, context_note)` — builds a complete Batch API request dict; system prompt is wrapped in a `cache_control: ephemeral` block for prompt caching; `context_note` prepends prior-pass context for Pass 3 escalations
+- `submit_batches(client, requests, pass_n, state)` — chunks requests into `BATCH_SIZE` slices, submits each to the Batch API, and persists state
+- `parse_response(text)` — extracts `{reasoning, label}` JSON via bracket matching; returns the **last** valid object in the text (handles model self-corrections where two JSON blocks appear); derives `score` from `LABEL_TO_SCORE`
+- `load_jsonl_results(pass_n)` — reads all downloaded JSONL files for a given pass; prints a count of valid vs. error/unparseable results with a warning if the error rate exceeds 5%
+- `load_state()` / `save_state(state)` — read/write `data/batch_state.json`; `load_state()` raises `ValueError` on malformed files (wrong type or missing `batches` key)
 - `decide(cid, pass1, pass2, pass3)` — three-pass resolution logic returning `(score, source)`
 - `apply_consistency(rows, results)` — symmetry correction for delta=0 pairs
 
@@ -85,10 +89,20 @@ corrected(A→B) = ( raw(A→B) + (1 − raw(B→A)) ) / 2
 
 This guarantees `corrected(A→B) + corrected(B→A) = 1.0`.
 
+The `consistency_flag` column in the final CSV records the outcome for every row:
+
+| Flag | Meaning |
+|---|---|
+| `symmetric_corrected` | delta=0, partner exists, `raw_ab + raw_ba > 1.0` → correction applied |
+| `symmetric_consistent` | delta=0, partner exists, `raw_ab + raw_ba ≤ 1.0` → score unchanged |
+| `symmetric_pair_missing` | delta=0, but partner row has no usable score |
+| `no_symmetric_possible` | delta > 0 → no symmetric pair exists in the dataset |
+| `source_missing` | pair has no score from the pipeline |
+
 ### Prompt format
 
 `prompts/prereq_judge.md` contains two fenced code blocks (SYSTEM and USER) parsed by `load_prompt()`. The USER block has six `{{PLACEHOLDER}}` variables filled by `fill_user()`. Do not change the fence markers or block order without updating the regex in `load_prompt()`.
 
 ### Tests
 
-`tests/conftest.py` adds `scripts/` to `sys.path` so `build_pairs` is importable alongside the installed `batch_utils`. Tests cover only pure functions — no API calls, no file I/O.
+`tests/conftest.py` adds `scripts/` to `sys.path` so `build_pairs` is importable alongside the installed `batch_utils`. Tests cover only pure functions — no API calls, no file I/O. Coverage includes: `parse_response`, `fill_user`, `decide`, `candidate_pairs`, `apply_consistency`, `custom_id`, `make_request`, `load_prompt`, `load_state`, `save_state`.

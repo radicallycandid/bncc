@@ -104,11 +104,19 @@ corrected(A→B) = ( raw(A→B) + (1 − raw(B→A)) ) / 2
 corrected(B→A) = ( raw(B→A) + (1 − raw(A→B)) ) / 2
 ```
 
-O CSV final inclui o campo `consistency_flag` documentando se cada par foi corrigido ou mantido intacto.
+O CSV final inclui o campo `consistency_flag` documentando o resultado para cada par:
+
+| Flag | Significado |
+|------|-------------|
+| `symmetric_corrected` | delta=0, simétrico existe, `raw_ab + raw_ba > 1,0` → correção aplicada |
+| `symmetric_consistent` | delta=0, simétrico existe, `raw_ab + raw_ba ≤ 1,0` → score mantido |
+| `symmetric_pair_missing` | delta=0, mas o par simétrico não tem score utilizável |
+| `no_symmetric_possible` | delta > 0 → não existe par simétrico no dataset |
+| `source_missing` | par sem score do pipeline anterior |
 
 ### Uso da Message Batches API
 
-Todos os passes usam a [Message Batches API](https://docs.anthropic.com/en/api/creating-message-batches) da Anthropic, que oferece **50% de desconto** em relação às chamadas síncronas com SLA de 24h. O estado entre passes é persistido em `data/batch_state.json` (gitignored), e os resultados brutos em JSONL ficam em `data/raw_results/` (também gitignored).
+Todos os passes usam a [Message Batches API](https://docs.anthropic.com/en/api/creating-message-batches) da Anthropic, que oferece **50% de desconto** em relação às chamadas síncronas com SLA de 24h. O system prompt é marcado com `cache_control: ephemeral` em todas as requisições, reduzindo custo e latência nas janelas de cache. O estado entre passes é persistido em `data/batch_state.json` (gitignored), e os resultados brutos em JSONL ficam em `data/raw_results/` (também gitignored).
 
 ---
 
@@ -129,7 +137,7 @@ scripts/
   poll.py                      polling e download de resultados
   assemble.py                  consolida os três passes → prereq_pairs_scored.csv
   consistency.py               correção de simetria → prereq_pairs_final.csv
-  run_sample.py                smoke test síncrono (~20 pares)
+  run_sample.py                smoke test síncrono com amostragem estratificada e 3 passes completos
 tests/
   test_core.py                 testes das funções puras (sem chamadas de API)
 ```
