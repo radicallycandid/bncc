@@ -60,7 +60,7 @@ def main() -> None:
 def _print_summary(state: dict) -> None:
     counts = Counter((b["pass"], b["status"]) for b in state["batches"])
     print("\nEstado atual dos batches:")
-    for (pass_n, status), n in sorted(counts.items()):
+    for (pass_n, status), n in sorted(counts.items(), key=lambda x: (str(x[0][0]), x[0][1])):
         print(f"  Pass {pass_n} — {status}: {n} batch(es)")
 
     # Indica o próximo passo

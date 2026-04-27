@@ -26,6 +26,7 @@ from pathlib import Path
 
 MODEL_PRIMARY   = "claude-haiku-4-5-20251001"   # Haiku 4.5
 MODEL_SECONDARY = "claude-sonnet-4-6"            # Sonnet 4.6
+MODEL_SYM       = "claude-sonnet-4-6"            # Sonnet 4.6 — pass simétrico
 
 # Labels borderline → vão para o Pass 2
 BORDERLINE_LABELS = {"PROVAVELMENTE_SIM", "INCERTO", "PROVAVELMENTE_NÃO"}
@@ -51,12 +52,13 @@ VALID_LABELS = set(LABEL_TO_SCORE)
 # Paths
 # ---------------------------------------------------------------------------
 
-ROOT         = Path(__file__).parent.parent   # raiz do repositório
-PAIRS_CSV    = ROOT / "data" / "prereq_pairs_bncc.csv"
-STATE_FILE   = ROOT / "data" / "batch_state.json"
-RAW_DIR      = ROOT / "data" / "raw_results"
-INTERIM_DIR  = ROOT / "data" / "interim"
-PROMPT_FILE  = ROOT / "prompts" / "prereq_judge.md"
+ROOT             = Path(__file__).parent.parent   # raiz do repositório
+PAIRS_CSV        = ROOT / "data" / "prereq_pairs_bncc.csv"
+STATE_FILE       = ROOT / "data" / "batch_state.json"
+RAW_DIR          = ROOT / "data" / "raw_results"
+INTERIM_DIR      = ROOT / "data" / "interim"
+PROMPT_FILE      = ROOT / "prompts" / "prereq_judge.md"
+PROMPT_FILE_SYM  = ROOT / "prompts" / "prereq_judge_sym.md"
 
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 INTERIM_DIR.mkdir(parents=True, exist_ok=True)
@@ -66,15 +68,18 @@ INTERIM_DIR.mkdir(parents=True, exist_ok=True)
 # Carregamento do prompt
 # ---------------------------------------------------------------------------
 
-def load_prompt() -> tuple[str, str]:
+def load_prompt(path: Path | None = None) -> tuple[str, str]:
     """
-    Lê prompts/prereq_judge.md e retorna (system_prompt, user_template).
-    Extrai o conteúdo dos blocos de código sob ## SYSTEM e ## USER.
+    Lê um arquivo de prompt no formato prereq_judge.md e retorna
+    (system_prompt, user_template). Extrai os dois primeiros blocos de código.
+    Usa PROMPT_FILE por padrão; passe PROMPT_FILE_SYM para o prompt simétrico.
     """
-    text = PROMPT_FILE.read_text(encoding="utf-8")
+    if path is None:
+        path = PROMPT_FILE
+    text = path.read_text(encoding="utf-8")
     blocks = re.findall(r"```\n(.*?)\n```", text, re.DOTALL)
     if len(blocks) < 2:
-        raise ValueError(f"Não encontrei blocos SYSTEM e USER em {PROMPT_FILE}")
+        raise ValueError(f"Não encontrei blocos SYSTEM e USER em {path}")
     return blocks[0], blocks[1]
 
 
@@ -114,6 +119,7 @@ def make_request(
     model: str,
     temperature: float,
     context_note: str | None = None,
+    max_tokens: int = 512,
 ) -> dict:
     """
     Monta um request para a Message Batches API.
@@ -131,7 +137,7 @@ def make_request(
         "custom_id": custom_id(row),
         "params": {
             "model":       model,
-            "max_tokens":  512,
+            "max_tokens":  max_tokens,
             "temperature": temperature,
             "system":      [
                 {
@@ -143,6 +149,30 @@ def make_request(
             "messages":    [{"role": "user", "content": user_content}],
         },
     }
+
+
+def sym_custom_id(row: dict) -> str:
+    """ID canônico para o pass simétrico: menor código primeiro, sufixo __sym."""
+    a, b = sorted([row["codigo_a"], row["codigo_b"]])
+    return f"{a}__{b}__sym"
+
+
+def make_request_sym(
+    row: dict,
+    system: str,
+    user_template: str,
+    model: str,
+    temperature: float,
+) -> dict:
+    """
+    Monta um request simétrico: mesmo formato de make_request, mas com
+    custom_id canônico (menor código primeiro + sufixo __sym) e max_tokens=1024
+    para acomodar o raciocínio duplo sem truncamento.
+    O row deve ter o código menor em codigo_a — responsabilidade do chamador.
+    """
+    req = make_request(row, system, user_template, model, temperature, max_tokens=1024)
+    req["custom_id"] = sym_custom_id(row)
+    return req
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +220,101 @@ def parse_response(text: str) -> dict | None:
     except (TypeError, KeyError):
         pass
     return None
+
+
+def parse_sym_response(text: str) -> dict | None:
+    """
+    Extrai {reasoning, label_ab, label_ba} do texto de resposta simétrica e
+    acrescenta score_ab e score_ba derivados dos labels.
+
+    Retorna None se o JSON estiver ausente ou malformado. Emite aviso se
+    score_ab + score_ba > 1.0 (o modelo ignorou a restrição de consistência),
+    mas ainda assim retorna o resultado para não perder dados.
+    """
+    try:
+        starts = [m.start() for m in re.finditer(r"\{", text)]
+        for start in reversed(starts):
+            depth, end = 0, -1
+            for i in range(start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+            if end == -1:
+                continue
+            try:
+                data = json.loads(text[start : end + 1])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not {"reasoning", "label_ab", "label_ba"}.issubset(data):
+                continue
+            if data["label_ab"] not in VALID_LABELS or data["label_ba"] not in VALID_LABELS:
+                continue
+            data["score_ab"] = LABEL_TO_SCORE[data["label_ab"]]
+            data["score_ba"] = LABEL_TO_SCORE[data["label_ba"]]
+            if data["score_ab"] + data["score_ba"] > 1.0:
+                print(
+                    f"  ⚠️  sym: modelo violou restrição de consistência "
+                    f"({data['label_ab']} + {data['label_ba']} = "
+                    f"{data['score_ab'] + data['score_ba']:.2f} > 1.0)"
+                )
+            return data
+    except (TypeError, KeyError):
+        pass
+    return None
+
+
+def load_jsonl_results_sym() -> dict[str, dict]:
+    """
+    Lê todos os arquivos JSONL do pass simétrico.
+    Retorna {cid_direcional: result}, expandindo cada resultado em duas entradas:
+      "{a}__{b}" → resultado de A→B  (score_ab, label_ab)
+      "{b}__{a}" → resultado de B→A  (score_ba, label_ba)
+    onde a < b (ordem canônica usada no sym_custom_id).
+    """
+    state = load_state()
+    files = [
+        Path(b["results_file"])
+        for b in state["batches"]
+        if b["pass"] == "sym" and b["status"] == "downloaded"
+    ]
+    scores: dict[str, dict] = {}
+    n_errors = 0
+    for path in files:
+        for line in path.open(encoding="utf-8"):
+            result = json.loads(line)
+            cid = result["custom_id"]  # "A__B__sym"
+            if result["result"]["type"] != "succeeded":
+                n_errors += 1
+                continue
+            text = result["result"]["message"]["content"][0]["text"]
+            parsed = parse_sym_response(text)
+            if not parsed:
+                n_errors += 1
+                continue
+            # cid = "{menor}__{maior}__sym"
+            raw_cid = cid[: -len("__sym")]
+            codigo_a, codigo_b = raw_cid.split("__", 1)
+            scores[f"{codigo_a}__{codigo_b}"] = {
+                "score":     parsed["score_ab"],
+                "label":     parsed["label_ab"],
+                "reasoning": parsed["reasoning"],
+                "source":    "sym",
+            }
+            scores[f"{codigo_b}__{codigo_a}"] = {
+                "score":     parsed["score_ba"],
+                "label":     parsed["label_ba"],
+                "reasoning": parsed["reasoning"],
+                "source":    "sym",
+            }
+    total = len(scores) // 2 + n_errors
+    pct = (n_errors / total * 100) if total else 0.0
+    warn = "  ⚠️  TAXA ALTA — inspecione data/raw_results/" if pct > 5 else ""
+    print(f"  Pass sym: {len(scores) // 2:,} pares válidos, {n_errors:,} erros ({pct:.1f}%){warn}")
+    return scores
 
 
 def load_jsonl_results(pass_n: int) -> dict[str, dict]:

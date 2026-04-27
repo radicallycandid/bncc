@@ -33,6 +33,8 @@ poll.py
 submit_pass3.py                # Pass 3: disagreements → Sonnet, temp=0
 poll.py
 assemble.py                    # → data/prereq_pairs_scored.csv
+submit_pass_sym.py             # Pass sym: delta=0 inconsistencies → Sonnet, both directions at once
+poll.py
 consistency.py                 # → data/prereq_pairs_final.csv
 ```
 
@@ -56,17 +58,21 @@ fetch_skills.py
 ### `batch_utils.py` — shared library
 
 Installed as an editable package (`pip install -e .`), so it's importable by both scripts and tests without path manipulation. Contains:
-- Constants: model names, `LABEL_TO_SCORE`, `BORDERLINE_LABELS`, `ESCALATION_THRESHOLD`, `BATCH_SIZE`
-- Path definitions: `PAIRS_CSV`, `STATE_FILE`, `RAW_DIR`, `INTERIM_DIR`, `PROMPT_FILE`
-- `load_prompt()` / `fill_user()` — parses `prompts/prereq_judge.md` and substitutes `{{...}}` variables; `fill_user()` is single-pass (regex) so substituted values are never re-processed
+- Constants: model names (`MODEL_PRIMARY`, `MODEL_SECONDARY`, `MODEL_SYM`), `LABEL_TO_SCORE`, `BORDERLINE_LABELS`, `ESCALATION_THRESHOLD`, `BATCH_SIZE`
+- Path definitions: `PAIRS_CSV`, `STATE_FILE`, `RAW_DIR`, `INTERIM_DIR`, `PROMPT_FILE`, `PROMPT_FILE_SYM`
+- `load_prompt(path)` / `fill_user()` — parses a prompt `.md` file and substitutes `{{...}}` variables; accepts optional `path` so both `prereq_judge.md` and `prereq_judge_sym.md` can be loaded; `fill_user()` is single-pass (regex) so substituted values are never re-processed
 - `custom_id(row)` — returns `{codigo_a}__{codigo_b}`; stable key used to correlate results across all passes
+- `sym_custom_id(row)` — returns `{menor}__{maior}__sym`; canonical ID for symmetric pass requests (smaller code first)
 - `make_request(row, system, user_template, model, temperature, context_note)` — builds a complete Batch API request dict; system prompt is wrapped in a `cache_control: ephemeral` block for prompt caching; `context_note` prepends prior-pass context for Pass 3 escalations
-- `submit_batches(client, requests, pass_n, state)` — chunks requests into `BATCH_SIZE` slices, submits each to the Batch API, and persists state
-- `parse_response(text)` — extracts `{reasoning, label}` JSON via bracket matching; returns the **last** valid object in the text (handles model self-corrections where two JSON blocks appear); derives `score` from `LABEL_TO_SCORE`
+- `make_request_sym(row, system, user_template, model, temperature)` — same as `make_request` but uses `sym_custom_id`; row must have `codigo_a < codigo_b` (caller's responsibility)
+- `submit_batches(client, requests, pass_n, state)` — chunks requests into `BATCH_SIZE` slices, submits each to the Batch API, and persists state; `pass_n` can be int (1–3) or `"sym"`
+- `parse_response(text)` — extracts `{reasoning, label}` JSON via bracket matching; returns the **last** valid object in the text; derives `score` from `LABEL_TO_SCORE`
+- `parse_sym_response(text)` — extracts `{reasoning, label_ab, label_ba}` from a symmetric response; derives `score_ab` and `score_ba`; warns (but still returns) if `score_ab + score_ba > 1.0`
 - `load_jsonl_results(pass_n)` — reads all downloaded JSONL files for a given pass; prints a count of valid vs. error/unparseable results with a warning if the error rate exceeds 5%
+- `load_jsonl_results_sym()` — reads sym-pass JSONL; expands each result into two directional entries (`A__B` and `B__A`)
 - `load_state()` / `save_state(state)` — read/write `data/batch_state.json`; `load_state()` raises `ValueError` on malformed files (wrong type or missing `batches` key)
 - `decide(cid, pass1, pass2, pass3)` — three-pass resolution logic returning `(score, source)`
-- `apply_consistency(rows, results)` — symmetry correction for delta=0 pairs
+- `apply_consistency(rows, results)` — symmetry correction for delta=0 pairs (used internally by legacy path)
 
 ### Three-pass scoring logic
 
@@ -79,21 +85,24 @@ Installed as an editable package (`pip install -e .`), so it's importable by bot
 
 Scores from averaging are non-canonical floats (e.g. `0.625`) — they are final values and are never converted back to labels.
 
-### Symmetry correction
+### Symmetry resolution
 
-For delta=0 pairs where `raw(A→B) + raw(B→A) > 1.0` (circular dependency signal):
+For delta=0 pairs where `raw(A→B) + raw(B→A) > 1.0` (circular dependency signal), two resolution paths exist:
 
+**Pass Simétrico (preferred):** `submit_pass_sym.py` sends both skills in a single Sonnet request using `prompts/prereq_judge_sym.md`. The model is told that `score(A→B) + score(B→A) ≤ 1.0` but can assign both low (unlike the algebraic formula, which forces the sum to exactly 1.0). Result is stored with `source="sym"`.
+
+**Correção algébrica (fallback):** used when the sym pass was not run or a pair has no sym result:
 ```
 corrected(A→B) = ( raw(A→B) + (1 − raw(B→A)) ) / 2
 ```
-
 This guarantees `corrected(A→B) + corrected(B→A) = 1.0`.
 
 The `consistency_flag` column in the final CSV records the outcome for every row:
 
 | Flag | Meaning |
 |---|---|
-| `symmetric_corrected` | delta=0, partner exists, `raw_ab + raw_ba > 1.0` → correction applied |
+| `sym_scored` | delta=0, inconsistent, resolved by sym pass → Sonnet scored both directions |
+| `symmetric_corrected` | delta=0, inconsistent, no sym result → algebraic correction applied |
 | `symmetric_consistent` | delta=0, partner exists, `raw_ab + raw_ba ≤ 1.0` → score unchanged |
 | `symmetric_pair_missing` | delta=0, but partner row has no usable score |
 | `no_symmetric_possible` | delta > 0 → no symmetric pair exists in the dataset |
@@ -105,4 +114,4 @@ The `consistency_flag` column in the final CSV records the outcome for every row
 
 ### Tests
 
-`tests/conftest.py` adds `scripts/` to `sys.path` so `build_pairs` is importable alongside the installed `batch_utils`. Tests cover only pure functions — no API calls, no file I/O. Coverage includes: `parse_response`, `fill_user`, `decide`, `candidate_pairs`, `apply_consistency`, `custom_id`, `make_request`, `load_prompt`, `load_state`, `save_state`.
+`tests/conftest.py` adds `scripts/` to `sys.path` so `build_pairs` is importable alongside the installed `batch_utils`. Tests cover only pure functions — no API calls, no file I/O. Coverage includes: `parse_response`, `parse_sym_response`, `fill_user`, `decide`, `candidate_pairs`, `apply_consistency`, `custom_id`, `sym_custom_id`, `make_request`, `make_request_sym`, `load_prompt` (both prompts), `load_state`, `save_state`.

@@ -9,6 +9,7 @@ import pytest
 import batch_utils
 from batch_utils import (
     LABEL_TO_SCORE,
+    PROMPT_FILE_SYM,
     apply_consistency,
     custom_id,
     decide,
@@ -16,8 +17,11 @@ from batch_utils import (
     load_prompt,
     load_state,
     make_request,
+    make_request_sym,
     parse_response,
+    parse_sym_response,
     save_state,
+    sym_custom_id,
 )
 from build_pairs import candidate_pairs
 
@@ -404,6 +408,157 @@ class TestLoadState:
         monkeypatch.setattr(batch_utils, "STATE_FILE", path)
         with pytest.raises(ValueError, match="corrompido"):
             load_state()
+
+
+# ---------------------------------------------------------------------------
+# parse_sym_response
+# ---------------------------------------------------------------------------
+
+class TestParseSymResponse:
+    def test_valid(self):
+        text = '{"reasoning": "X.", "label_ab": "PROVAVELMENTE_SIM", "label_ba": "DEFINITIVAMENTE_NÃO"}'
+        r = parse_sym_response(text)
+        assert r["label_ab"] == "PROVAVELMENTE_SIM"
+        assert r["label_ba"] == "DEFINITIVAMENTE_NÃO"
+        assert r["score_ab"] == 0.75
+        assert r["score_ba"] == 0.0
+
+    def test_all_label_combinations_produce_correct_scores(self):
+        for lab_ab, s_ab in LABEL_TO_SCORE.items():
+            for lab_ba, s_ba in LABEL_TO_SCORE.items():
+                text = f'{{"reasoning": "x", "label_ab": "{lab_ab}", "label_ba": "{lab_ba}"}}'
+                r = parse_sym_response(text)
+                assert r["score_ab"] == s_ab
+                assert r["score_ba"] == s_ba
+
+    def test_both_low_is_valid(self):
+        text = '{"reasoning": "x", "label_ab": "DEFINITIVAMENTE_NÃO", "label_ba": "DEFINITIVAMENTE_NÃO"}'
+        r = parse_sym_response(text)
+        assert r["score_ab"] == 0.0 and r["score_ba"] == 0.0
+
+    def test_sum_above_one_still_returns(self, capsys):
+        # Modelo violou a restrição — retorna mesmo assim, mas emite aviso
+        text = '{"reasoning": "x", "label_ab": "DEFINITIVAMENTE_SIM", "label_ba": "DEFINITIVAMENTE_SIM"}'
+        r = parse_sym_response(text)
+        assert r is not None
+        assert "⚠️" in capsys.readouterr().out
+
+    def test_missing_label_ab(self):
+        assert parse_sym_response('{"reasoning": "x", "label_ba": "INCERTO"}') is None
+
+    def test_missing_label_ba(self):
+        assert parse_sym_response('{"reasoning": "x", "label_ab": "INCERTO"}') is None
+
+    def test_missing_reasoning(self):
+        assert parse_sym_response('{"label_ab": "INCERTO", "label_ba": "INCERTO"}') is None
+
+    def test_invalid_label_ab(self):
+        assert parse_sym_response('{"reasoning": "x", "label_ab": "TALVEZ", "label_ba": "INCERTO"}') is None
+
+    def test_invalid_label_ba(self):
+        assert parse_sym_response('{"reasoning": "x", "label_ab": "INCERTO", "label_ba": "TALVEZ"}') is None
+
+    def test_no_json(self):
+        assert parse_sym_response("sem JSON") is None
+
+    def test_json_buried_in_prose(self):
+        text = 'Análise:\n{"reasoning": "ok", "label_ab": "INCERTO", "label_ba": "PROVAVELMENTE_NÃO"}\nFim.'
+        r = parse_sym_response(text)
+        assert r["score_ab"] == 0.5 and r["score_ba"] == 0.25
+
+    def test_last_valid_json_wins(self):
+        # Modelo auto-corrigiu — o segundo bloco é o veredito
+        text = (
+            '{"reasoning": "rascunho", "label_ab": "INCERTO", "label_ba": "INCERTO"}'
+            ' texto '
+            '{"reasoning": "final", "label_ab": "DEFINITIVAMENTE_SIM", "label_ba": "DEFINITIVAMENTE_NÃO"}'
+        )
+        r = parse_sym_response(text)
+        assert r["label_ab"] == "DEFINITIVAMENTE_SIM"
+        assert r["label_ba"] == "DEFINITIVAMENTE_NÃO"
+
+
+# ---------------------------------------------------------------------------
+# sym_custom_id e make_request_sym
+# ---------------------------------------------------------------------------
+
+def _sym_row():
+    return {
+        "codigo_a": "EF01MA01", "ano_a": "1", "habilidade_a": "contar",
+        "codigo_b": "EF01MA02", "ano_b": "1", "habilidade_b": "somar",
+    }
+
+
+class TestSymCustomId:
+    def test_smaller_code_first(self):
+        row = {"codigo_a": "EF01MA02", "codigo_b": "EF01MA01"}
+        cid = sym_custom_id(row)
+        assert cid.startswith("EF01MA01__EF01MA02")
+
+    def test_already_canonical_unchanged(self):
+        row = {"codigo_a": "EF01MA01", "codigo_b": "EF01MA02"}
+        assert sym_custom_id(row) == "EF01MA01__EF01MA02__sym"
+
+    def test_sym_suffix_present(self):
+        assert sym_custom_id(_sym_row()).endswith("__sym")
+
+    def test_no_extra_underscores(self):
+        cid = sym_custom_id(_sym_row())
+        # Exatamente dois separadores "__" (entre codigos e antes de "sym")
+        assert cid.count("__") == 2
+
+
+class TestMakeRequestSym:
+    def test_custom_id_has_sym_suffix(self):
+        req = make_request_sym(_sym_row(), "S", "u", "sonnet", 0)
+        assert req["custom_id"].endswith("__sym")
+
+    def test_custom_id_is_canonical(self):
+        row = {**_sym_row(), "codigo_a": "EF01MA02", "codigo_b": "EF01MA01"}
+        req = make_request_sym(row, "S", "u", "sonnet", 0)
+        assert req["custom_id"] == "EF01MA01__EF01MA02__sym"
+
+    def test_params_shape_matches_make_request(self):
+        req = make_request_sym(_sym_row(), "S", "{{CODIGO_A}}", "sonnet", 0)
+        params = req["params"]
+        assert params["model"] == "sonnet"
+        assert params["temperature"] == 0
+        assert "system" in params and "messages" in params
+
+    def test_system_is_cached(self):
+        req = make_request_sym(_sym_row(), "SYS", "u", "sonnet", 0)
+        block = req["params"]["system"][0]
+        assert block["cache_control"] == {"type": "ephemeral"}
+
+    def test_user_template_filled(self):
+        req = make_request_sym(_sym_row(), "S", "{{CODIGO_A}}->{{CODIGO_B}}", "sonnet", 0)
+        content = req["params"]["messages"][0]["content"]
+        assert "EF01MA01" in content and "EF01MA02" in content
+
+
+# ---------------------------------------------------------------------------
+# load_prompt com path customizado (PROMPT_FILE_SYM)
+# ---------------------------------------------------------------------------
+
+class TestLoadPromptSym:
+    def test_sym_prompt_has_two_blocks(self):
+        system, user = load_prompt(PROMPT_FILE_SYM)
+        assert len(system) > 0
+        assert len(user) > 0
+
+    def test_sym_user_has_all_placeholders(self):
+        _, user = load_prompt(PROMPT_FILE_SYM)
+        for ph in ["{{ANO_A}}", "{{CODIGO_A}}", "{{HABILIDADE_A}}",
+                   "{{ANO_B}}", "{{CODIGO_B}}", "{{HABILIDADE_B}}"]:
+            assert ph in user
+
+    def test_sym_system_mentions_label_ab_and_label_ba(self):
+        system, _ = load_prompt(PROMPT_FILE_SYM)
+        assert "label_ab" in system and "label_ba" in system
+
+    def test_sym_system_mentions_constraint(self):
+        system, _ = load_prompt(PROMPT_FILE_SYM)
+        assert "≤ 1" in system or "<= 1" in system or "≤ 1.0" in system
 
 
 class TestSaveState:
