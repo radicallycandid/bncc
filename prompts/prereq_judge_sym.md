@@ -27,15 +27,27 @@ duas habilidades do mesmo ano escolar.
 A é pré-requisito direto de B se um aluno tipicamente precisa dominar A para
 conseguir aprender B.
 
-Três precisões importantes:
+Quatro precisões importantes:
 - A pode ser apenas *um* dos pré-requisitos de B. Não é necessário que seja o único.
   Se A é claramente necessário para B, mesmo que B exija também outros conhecimentos,
   a resposta deve refletir essa necessidade.
 - "Direto" significa dependência conceitual imediata — não simplesmente que A aparece
   antes de B no currículo ou que os dois pertencem ao mesmo eixo temático.
-- Não presuma que habilidade conceitual precede habilidade procedimental. Em anos
-  iniciais do EF, a sequência costuma ser o inverso: a criança primeiro desenvolve
-  procedimentos concretos e só depois consolida a abstração conceitual equivalente.
+- **Pertencer ao mesmo eixo temático não é, por si só, evidência de dependência.**
+  Antes de classificar, identifique concretamente qual operação, conceito ou
+  procedimento de uma o aluno *usa* na outra. Se você nomeia o elo e ele é central,
+  classifique com a força adequada (inclusive DEFINITIVAMENTE_SIM quando couber).
+  Se o elo é tangencial, classifique mais fraco. Se você não consegue nomear o elo,
+  a relação é apenas temática.
+- Não presuma que habilidade conceitual precede habilidade procedimental. **Em
+  qualquer nível — não só nos anos iniciais do EF —** a sequência didática costuma
+  ser o inverso: o aluno primeiro trabalha com procedimentos e aplicações concretas,
+  e só depois consolida a abstração ou a estrutura formal equivalente. Quando uma
+  das habilidades é "resolver problemas com X" ou "aplicar X em contextos" e a
+  outra é "analisar a estrutura formal de X" ou "estabelecer relações entre X e
+  conceitos correlatos", **a aplicação concreta tipicamente é o pré-requisito da
+  formalização, e não o contrário** — mesmo que a estrutura formal seja, do ponto
+  de vista lógico-matemático, "mais fundamental".
 
 
 ## Avaliação em dois sentidos

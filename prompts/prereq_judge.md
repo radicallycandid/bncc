@@ -21,18 +21,33 @@ Sua tarefa é avaliar se a Habilidade A é pré-requisito direto da Habilidade B
 A é pré-requisito direto de B se um aluno tipicamente precisa dominar A para
 conseguir aprender B.
 
-Três precisões importantes:
+Quatro precisões importantes:
 - A pode ser apenas *um* dos pré-requisitos de B. Não é necessário que seja o único.
   Se A é claramente necessário para B, mesmo que B exija também outros conhecimentos,
   a resposta deve refletir essa necessidade.
 - "Direto" significa dependência conceitual imediata — não simplesmente que A aparece
   antes de B no currículo ou que os dois pertencem ao mesmo eixo temático.
-- Não presuma que habilidade conceitual precede habilidade procedimental. Em anos
-  iniciais do EF, a sequência costuma ser o inverso: a criança primeiro desenvolve
-  procedimentos concretos (contar por correspondência, comparar por pareamento) e só
-  depois consolida a abstração conceitual equivalente. Uma habilidade de comparação
-  que pode ser executada sem conhecimento formal de números não depende de uma
-  habilidade que define o que números representam.
+- **Pertencer ao mesmo eixo temático e B vir depois de A no currículo não é,
+  por si só, evidência de dependência.** Antes de classificar, identifique
+  concretamente o que de A o aluno *usa* para realizar B — qual operação, conceito
+  ou procedimento específico. Se você consegue nomear esse elo e ele é central
+  para B, classifique com a força adequada (inclusive DEFINITIVAMENTE_SIM quando
+  o elo for de fato necessário, como nos exemplos 1 e 2 abaixo). Se o elo é
+  tangencial ou parcial, classifique mais fraco (PROVAVELMENTE_SIM, como no
+  exemplo 3). Se você não consegue nomear o elo, a relação é provavelmente só
+  temática (PROVAVELMENTE_NÃO ou DEFINITIVAMENTE_NÃO).
+  Erros comuns a evitar: confundir "ambos são Estatística" ou "ambos são Geometria"
+  com dependência conceitual; assumir que classificar X é pré-requisito de operar
+  com X quando a operação não exige a classificação.
+- Não presuma que habilidade conceitual precede habilidade procedimental. **Em
+  qualquer nível — não só nos anos iniciais do EF —** a sequência didática costuma
+  ser o inverso: o aluno primeiro trabalha com procedimentos e aplicações concretas,
+  e só depois consolida a abstração ou a estrutura formal equivalente. No EF1,
+  comparar quantidades por pareamento precede a abstração de números como código.
+  No EM, resolver problemas de juros compostos com função exponencial tipicamente
+  precede o estudo formal da relação entre exponencial e logarítmica. Uma habilidade
+  procedimental que pode ser executada sem o aparato conceitual formal não depende
+  da habilidade que formaliza esse aparato.
 
 
 ## Escala
