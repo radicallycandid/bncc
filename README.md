@@ -19,7 +19,7 @@ A BNCC define *o que* ensinar, mas não *em que ordem* dentro de um mesmo ano ou
 ## Quickstart
 
 ```bash
-# 1. Instale as dependências
+# 1. Instale as dependências (inclui anthropic e networkx)
 pip install -e .
 
 # 2. Smoke test com ~20 pares e chamadas síncronas (< $0,01)
@@ -46,7 +46,13 @@ python3 scripts/submit_pass3.py   # Pass 3: só os discordantes → Sonnet, temp
 python3 scripts/poll.py
 
 python3 scripts/assemble.py       # consolida → data/prereq_pairs_scored.csv
+
+python3 scripts/submit_pass_sym.py  # Pass sim: pares delta=0 inconsistentes → Sonnet, dois sentidos
+python3 scripts/poll.py
+
 python3 scripts/consistency.py    # corrige simetria → data/prereq_pairs_final.csv
+
+python3 scripts/build_viz.py      # gera grafo interativo → viz/prereq_graph.html
 ```
 
 > **Dica:** `submit_pass1.py` aceita `--limit N` para testar com um subconjunto antes de rodar tudo.
@@ -82,6 +88,7 @@ O design equilibra custo e qualidade:
 | 1 | Haiku 4.5 | 0 | Todos os ~22 k pares | Triagem determinística barata |
 | 2 | Haiku 4.5 | 0,5 | Pares com label `PROVAVELMENTE_*` ou `INCERTO` | Segunda opinião com temperatura para os casos ambíguos |
 | 3 | Sonnet 4.6 | 0 | Pares onde \|score₁ − score₂\| > 0,25 | Árbitro de maior capacidade para discordâncias reais |
+| Sim | Sonnet 4.6 | 0 | Pares delta=0 com `raw(A→B) + raw(B→A) > 1,0` | Resolve inconsistências simétricas num único request |
 
 **Resolução por `decide()`:**
 
@@ -91,24 +98,31 @@ se borderline e |s1 − s2| ≤ 0.25 → média(s1, s2)
 se borderline e |s1 − s2| > 0.25 → usa Pass 3 (ou média como fallback)
 ```
 
-O campo `source` no CSV final documenta o caminho percorrido por cada par: `pass1`, `pass1+pass2_avg`, `pass3`, ou `pass1+pass2_fallback`.
+O campo `source` no CSV final documenta o caminho percorrido por cada par: `pass1`, `pass1+pass2_avg`, `pass3`, `pass1+pass2_fallback`, ou `sym` (pass simétrico).
 
 ### Correção de simetria
 
 Pares do mesmo ano letivo (delta = 0) são avaliados nas duas direções: A→B e B→A. Se `score(A→B) + score(B→A) > 1,0`, existe um sinal de dependência circular: o modelo diz que A precede B *e* B precede A com mais confiança do que é logicamente possível.
 
-A correção garante `score(A→B) + score(B→A) = 1,0`:
+Há dois caminhos de resolução:
+
+**Pass Simétrico (preferido):** `submit_pass_sym.py` envia ambas as habilidades num único request Sonnet usando `prompts/prereq_judge_sym.md`. O modelo recebe a restrição `score(A→B) + score(B→A) ≤ 1,0` mas pode atribuir valores baixos a ambas (diferente da correção algébrica, que força a soma a exatamente 1,0). O resultado fica com `source="sym"`.
+
+**Correção algébrica (fallback):** usada quando o pass simétrico não foi rodado ou não produziu resultado para um par:
 
 ```
 corrected(A→B) = ( raw(A→B) + (1 − raw(B→A)) ) / 2
 corrected(B→A) = ( raw(B→A) + (1 − raw(A→B)) ) / 2
 ```
 
+Propriedade: `corrected(A→B) + corrected(B→A) = 1,0`.
+
 O CSV final inclui o campo `consistency_flag` documentando o resultado para cada par:
 
 | Flag | Significado |
 |------|-------------|
-| `symmetric_corrected` | delta=0, simétrico existe, `raw_ab + raw_ba > 1,0` → correção aplicada |
+| `sym_scored` | delta=0, inconsistente, resolvido pelo Pass Simétrico → Sonnet avaliou os dois sentidos |
+| `symmetric_corrected` | delta=0, inconsistente, sem resultado sym → correção algébrica aplicada |
 | `symmetric_consistent` | delta=0, simétrico existe, `raw_ab + raw_ba ≤ 1,0` → score mantido |
 | `symmetric_pair_missing` | delta=0, mas o par simétrico não tem score utilizável |
 | `no_symmetric_possible` | delta > 0 → não existe par simétrico no dataset |
@@ -128,18 +142,23 @@ data/
   prereq_pairs_bncc.csv        ~22 k pares candidatos (delta ≤ 2 anos)
   prereq_pairs_final.csv       output final (gerado pelo pipeline)
 prompts/
-  prereq_judge.md              prompt completo do juiz (system + user template + exemplos)
+  prereq_judge.md              prompt do juiz padrão (system + user template + exemplos)
+  prereq_judge_sym.md          prompt do juiz simétrico (avalia A→B e B→A juntos)
 scripts/
   fetch_skills.py              coleta habilidades da API pública
   build_pairs.py               gera pares por proximidade de ano
   batch_utils.py               biblioteca compartilhada (instalada como pacote)
   submit_pass{1,2,3}.py        submissão de cada pass para a Batch API
+  submit_pass_sym.py           pass simétrico: delta=0 inconsistentes → Sonnet
   poll.py                      polling e download de resultados
   assemble.py                  consolida os três passes → prereq_pairs_scored.csv
   consistency.py               correção de simetria → prereq_pairs_final.csv
+  build_viz.py                 gera grafo interativo canvas-based → viz/prereq_graph.html
   run_sample.py                smoke test síncrono com amostragem estratificada e 3 passes completos
 tests/
   test_core.py                 testes das funções puras (sem chamadas de API)
+viz/
+  prereq_graph.html            grafo interativo (gerado por build_viz.py)
 ```
 
 ---

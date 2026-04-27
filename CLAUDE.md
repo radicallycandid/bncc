@@ -16,6 +16,9 @@ python3 -m pytest tests/ -k "test_valid"              # single test by name
 # Smoke test the full pipeline logic with real API calls (sync, ~10 pairs, < $0.01)
 python3 scripts/run_sample.py --nrows 20
 
+# Generate interactive graph visualization (requires prereq_pairs_final.csv)
+python3 scripts/build_viz.py       # → viz/prereq_graph.html
+
 # Regenerate source data (rarely needed — outputs already committed)
 python3 scripts/fetch_skills.py    # → data/matematica_bncc.csv
 python3 scripts/build_pairs.py     # → data/prereq_pairs_bncc.csv
