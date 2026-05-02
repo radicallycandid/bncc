@@ -245,8 +245,6 @@ function setFocus(nid) {
 // ── drawer ────────────────────────────────────────────────────
 const drawer = document.getElementById('drawer');
 
-function scoreColor(s) { return '#9ca3af'; }
-
 function fmtScore(s) {
   return s.toFixed(2);
 }
@@ -255,7 +253,7 @@ function itemHtml(node, score) {
   return `<div class="drawer-item">
     <div class="item-row">
       <span class="item-code" style="color:${colorScale(node.ano)}">${node.id}</span>
-      <span class="item-score" style="background:${scoreColor(score)}">${fmtScore(score)}</span>
+      <span class="item-score" style="background:#9ca3af">${fmtScore(score)}</span>
     </div>
     <div class="item-hab">${node.habilidade}</div>
   </div>`;
