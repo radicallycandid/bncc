@@ -11,3 +11,6 @@ scripts/*.egg-info/
 
 # macOS
 .DS_Store
+
+# planejamento local — não versionar
+plan.md
