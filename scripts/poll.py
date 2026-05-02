@@ -15,7 +15,6 @@ Uso:
 
 import json
 import os
-import sys
 from collections import Counter
 
 import anthropic
