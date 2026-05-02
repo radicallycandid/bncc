@@ -8,6 +8,9 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = ["anthropic==0.97.0", "networkx>=3.0"]
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [tool.setuptools]
 py-modules = ["batch_utils"]
 package-dir = {"" = "scripts"}
