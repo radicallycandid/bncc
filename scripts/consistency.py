@@ -39,7 +39,7 @@ import csv
 from collections import Counter
 from pathlib import Path
 
-from batch_utils import load_jsonl_results_sym, load_state
+from batch_utils import load_jsonl_results_sym, load_state, resolve_pair
 
 INPUT  = Path(__file__).parent.parent / "data" / "prereq_pairs_scored.csv"
 OUTPUT = Path(__file__).parent.parent / "data" / "prereq_pairs_final.csv"
@@ -84,50 +84,25 @@ def main() -> None:
 
         for row in rows:
             ca, cb = row["codigo_a"], row["codigo_b"]
-            key_ab = (ca, cb)
-            key_ba = (cb, ca)
             cid_ab = f"{ca}__{cb}"
-            raw_ab = raw_scores.get(key_ab)
+            raw_ab = raw_scores.get((ca, cb))
+            raw_ba = raw_scores.get((cb, ca))
+            same_year = int(row["ano_a"]) == int(row["ano_b"])
 
-            if raw_ab is None:
-                flag = "source_missing"
-                writer.writerow({**row, "consistency_flag": flag})
-                flag_counts[flag] += 1
-                continue
+            score, source, flag = resolve_pair(
+                raw_ab=raw_ab,
+                raw_ba=raw_ba,
+                same_year=same_year,
+                cid_ab=cid_ab,
+                current_source=row.get("source", ""),
+                sym_results=sym_results,
+            )
 
-            if int(row["ano_a"]) != int(row["ano_b"]):
-                flag = "no_symmetric_possible"
-                writer.writerow({**row, "score": raw_ab, "consistency_flag": flag})
-                flag_counts[flag] += 1
-                continue
-
-            raw_ba = raw_scores.get(key_ba)
-            if raw_ba is None:
-                flag = "symmetric_pair_missing"
-                writer.writerow({**row, "score": raw_ab, "consistency_flag": flag})
-                flag_counts[flag] += 1
-                continue
-
-            if raw_ab + raw_ba <= 1.0:
-                flag = "symmetric_consistent"
-                writer.writerow({**row, "score": raw_ab, "consistency_flag": flag})
-                flag_counts[flag] += 1
-                continue
-
-            # Par inconsistente: usa sym se disponível, senão aplica fórmula.
-            if cid_ab in sym_results:
-                sym = sym_results[cid_ab]
-                flag = "sym_scored"
-                writer.writerow({
-                    **row,
-                    "score":  sym["score"],
-                    "source": sym["source"],
-                    "consistency_flag": flag,
-                })
-            else:
-                corrected = round((raw_ab + (1.0 - raw_ba)) / 2, 4)
-                flag = "symmetric_corrected"
-                writer.writerow({**row, "score": corrected, "consistency_flag": flag})
+            out = {**row, "consistency_flag": flag}
+            if score is not None:
+                out["score"] = score
+            out["source"] = source
+            writer.writerow(out)
             flag_counts[flag] += 1
 
     print(f"\nCSV final salvo → {OUTPUT} ({len(rows):,} pares)\n")

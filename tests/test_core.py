@@ -20,6 +20,7 @@ from batch_utils import (
     make_request_sym,
     parse_response,
     parse_sym_response,
+    resolve_pair,
     save_state,
     sym_custom_id,
 )
@@ -583,3 +584,79 @@ class TestSaveState:
         # Mesmo com a chave extra "nota", a leitura crua preserva o conteúdo
         raw = path.read_text(encoding="utf-8")
         assert "não" in raw and "ç" in raw
+
+
+# ---------------------------------------------------------------------------
+# resolve_pair
+# ---------------------------------------------------------------------------
+
+class TestResolvePair:
+    def _call(self, **overrides):
+        defaults = dict(
+            raw_ab=0.5,
+            raw_ba=0.3,
+            same_year=True,
+            cid_ab="A__B",
+            current_source="pass1",
+            sym_results={},
+        )
+        defaults.update(overrides)
+        return resolve_pair(**defaults)
+
+    def test_source_missing_when_raw_ab_none(self):
+        score, source, flag = self._call(raw_ab=None)
+        assert score is None
+        assert flag == "source_missing"
+        assert source == "pass1"  # preservado
+
+    def test_no_symmetric_possible_when_different_years(self):
+        score, source, flag = self._call(same_year=False, raw_ab=0.7)
+        assert score == 0.7
+        assert flag == "no_symmetric_possible"
+        assert source == "pass1"
+
+    def test_symmetric_pair_missing_when_raw_ba_none(self):
+        score, source, flag = self._call(raw_ba=None, raw_ab=0.6)
+        assert score == 0.6
+        assert flag == "symmetric_pair_missing"
+        assert source == "pass1"
+
+    def test_consistent_when_sum_le_one(self):
+        score, source, flag = self._call(raw_ab=0.4, raw_ba=0.5)
+        assert score == 0.4
+        assert flag == "symmetric_consistent"
+        assert source == "pass1"
+
+    def test_consistent_at_exact_one(self):
+        score, _, flag = self._call(raw_ab=0.5, raw_ba=0.5)
+        assert flag == "symmetric_consistent"
+        assert score == 0.5
+
+    def test_sym_scored_when_inconsistent_and_sym_available(self):
+        sym = {"A__B": {"score": 0.2, "source": "sym"}}
+        score, source, flag = self._call(raw_ab=0.75, raw_ba=0.5, sym_results=sym)
+        assert score == 0.2
+        assert source == "sym"
+        assert flag == "sym_scored"
+
+    def test_corrected_when_inconsistent_and_no_sym(self):
+        # raw_ab=0.75, raw_ba=0.5 → soma 1.25 (inconsistente)
+        # corrigido = (0.75 + (1 - 0.5)) / 2 = 0.625
+        score, source, flag = self._call(raw_ab=0.75, raw_ba=0.5)
+        assert score == 0.625
+        assert flag == "symmetric_corrected"
+        assert source == "pass1"
+
+    def test_corrected_pair_sums_to_one(self):
+        # Aplicando a fórmula nas duas direções, score(A→B) + score(B→A) = 1.0
+        ab, _, _ = self._call(raw_ab=0.75, raw_ba=0.5)
+        ba, _, _ = self._call(raw_ab=0.5, raw_ba=0.75)
+        assert ab + ba == pytest.approx(1.0)
+
+    def test_sym_overrides_corrected_only_when_inconsistent(self):
+        # Mesmo com sym disponível, par consistente NÃO é tocado.
+        sym = {"A__B": {"score": 0.99, "source": "sym"}}
+        score, source, flag = self._call(raw_ab=0.4, raw_ba=0.5, sym_results=sym)
+        assert flag == "symmetric_consistent"
+        assert score == 0.4
+        assert source == "pass1"

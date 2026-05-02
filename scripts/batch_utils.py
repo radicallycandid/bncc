@@ -436,6 +436,44 @@ def decide(
     return round((score1 + score2) / 2, 4), "pass1+pass2_fallback"
 
 
+def resolve_pair(
+    *,
+    raw_ab: float | None,
+    raw_ba: float | None,
+    same_year: bool,
+    cid_ab: str,
+    current_source: str,
+    sym_results: dict,
+) -> tuple[float | None, str, str]:
+    """
+    Determina (score final, source, consistency_flag) para um par direcional A→B.
+
+    Tenta resolver na seguinte ordem:
+      1. raw_ab ausente            → 'source_missing' (score=None, caller preserva)
+      2. ano_a != ano_b            → 'no_symmetric_possible'
+      3. raw_ba ausente            → 'symmetric_pair_missing'
+      4. raw_ab + raw_ba ≤ 1.0     → 'symmetric_consistent' (sem alteração)
+      5. par no sym_results        → 'sym_scored' (score do Sonnet, source='sym')
+      6. fallback                  → 'symmetric_corrected' (correção algébrica)
+
+    score=None só ocorre no caso 1; sinaliza ao caller para manter o valor da linha
+    original (que pode ser string vazia ou inválido).
+    """
+    if raw_ab is None:
+        return None, current_source, "source_missing"
+    if not same_year:
+        return raw_ab, current_source, "no_symmetric_possible"
+    if raw_ba is None:
+        return raw_ab, current_source, "symmetric_pair_missing"
+    if raw_ab + raw_ba <= 1.0:
+        return raw_ab, current_source, "symmetric_consistent"
+    if cid_ab in sym_results:
+        sym = sym_results[cid_ab]
+        return sym["score"], sym["source"], "sym_scored"
+    corrected = round((raw_ab + (1.0 - raw_ba)) / 2, 4)
+    return corrected, current_source, "symmetric_corrected"
+
+
 def apply_consistency(rows: list[dict], results: dict) -> tuple[dict, int]:
     """
     Aplica correção de simetria a pares delta=0: score(A→B) = (raw(A→B) + (1 − raw(B→A))) / 2.
