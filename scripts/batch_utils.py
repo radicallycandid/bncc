@@ -179,6 +179,46 @@ def make_request_sym(
 # Parsing de respostas
 # ---------------------------------------------------------------------------
 
+def _extract_last_json(
+    text: str,
+    required_keys: set[str],
+    validate=None,
+) -> dict | None:
+    """
+    Varre `text` em busca de objetos JSON e retorna o último que contém
+    todos os `required_keys` e passa em `validate` (se fornecido).
+
+    Itera em ordem reversa para tratar casos em que o modelo emite
+    auto-correção com dois blocos JSON — o segundo é o veredito final.
+    """
+    try:
+        starts = [m.start() for m in re.finditer(r"\{", text)]
+        for start in reversed(starts):
+            depth, end = 0, -1
+            for i in range(start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+            if end == -1:
+                continue
+            try:
+                data = json.loads(text[start : end + 1])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not required_keys.issubset(data):
+                continue
+            if validate is not None and not validate(data):
+                continue
+            return data
+    except (TypeError, KeyError):
+        pass
+    return None
+
+
 def parse_response(text: str) -> dict | None:
     """
     Extrai {reasoning, label} do texto de resposta do modelo e acrescenta
@@ -188,38 +228,16 @@ def parse_response(text: str) -> dict | None:
     aqui com mapeamento fixo, garantindo consistência nas etapas de averaging.
     Scores intermediários (ex.: 0.125) só surgem de médias entre passes — nunca
     do modelo diretamente — e são o valor final: não precisam voltar a ser label.
-
-    Usa matching de colchetes para encontrar todos os objetos JSON no texto e
-    retorna o último válido (trata casos em que o modelo emite auto-correção
-    com dois blocos JSON, onde o segundo é o veredito final).
     """
-    try:
-        starts = [m.start() for m in re.finditer(r"\{", text)]
-        for start in reversed(starts):
-            depth, end = 0, -1
-            for i in range(start, len(text)):
-                if text[i] == "{":
-                    depth += 1
-                elif text[i] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        end = i
-                        break
-            if end == -1:
-                continue
-            try:
-                data = json.loads(text[start : end + 1])
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if not {"reasoning", "label"}.issubset(data):
-                continue
-            if data["label"] not in VALID_LABELS:
-                continue
-            data["score"] = LABEL_TO_SCORE[data["label"]]
-            return data
-    except (TypeError, KeyError):
-        pass
-    return None
+    data = _extract_last_json(
+        text,
+        {"reasoning", "label"},
+        validate=lambda d: d["label"] in VALID_LABELS,
+    )
+    if data is None:
+        return None
+    data["score"] = LABEL_TO_SCORE[data["label"]]
+    return data
 
 
 def parse_sym_response(text: str) -> dict | None:
@@ -227,44 +245,25 @@ def parse_sym_response(text: str) -> dict | None:
     Extrai {reasoning, label_ab, label_ba} do texto de resposta simétrica e
     acrescenta score_ab e score_ba derivados dos labels.
 
-    Retorna None se o JSON estiver ausente ou malformado. Emite aviso se
-    score_ab + score_ba > 1.0 (o modelo ignorou a restrição de consistência),
-    mas ainda assim retorna o resultado para não perder dados.
+    Emite aviso se score_ab + score_ba > 1.0 (o modelo ignorou a restrição
+    de consistência), mas ainda assim retorna o resultado para não perder dados.
     """
-    try:
-        starts = [m.start() for m in re.finditer(r"\{", text)]
-        for start in reversed(starts):
-            depth, end = 0, -1
-            for i in range(start, len(text)):
-                if text[i] == "{":
-                    depth += 1
-                elif text[i] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        end = i
-                        break
-            if end == -1:
-                continue
-            try:
-                data = json.loads(text[start : end + 1])
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if not {"reasoning", "label_ab", "label_ba"}.issubset(data):
-                continue
-            if data["label_ab"] not in VALID_LABELS or data["label_ba"] not in VALID_LABELS:
-                continue
-            data["score_ab"] = LABEL_TO_SCORE[data["label_ab"]]
-            data["score_ba"] = LABEL_TO_SCORE[data["label_ba"]]
-            if data["score_ab"] + data["score_ba"] > 1.0:
-                print(
-                    f"  ⚠️  sym: modelo violou restrição de consistência "
-                    f"({data['label_ab']} + {data['label_ba']} = "
-                    f"{data['score_ab'] + data['score_ba']:.2f} > 1.0)"
-                )
-            return data
-    except (TypeError, KeyError):
-        pass
-    return None
+    data = _extract_last_json(
+        text,
+        {"reasoning", "label_ab", "label_ba"},
+        validate=lambda d: d["label_ab"] in VALID_LABELS and d["label_ba"] in VALID_LABELS,
+    )
+    if data is None:
+        return None
+    data["score_ab"] = LABEL_TO_SCORE[data["label_ab"]]
+    data["score_ba"] = LABEL_TO_SCORE[data["label_ba"]]
+    if data["score_ab"] + data["score_ba"] > 1.0:
+        print(
+            f"  ⚠️  sym: modelo violou restrição de consistência "
+            f"({data['label_ab']} + {data['label_ba']} = "
+            f"{data['score_ab'] + data['score_ba']:.2f} > 1.0)"
+        )
+    return data
 
 
 def load_jsonl_results_sym() -> dict[str, dict]:
