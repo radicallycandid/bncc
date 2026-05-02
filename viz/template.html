@@ -5,15 +5,17 @@
 <title>BNCC Matemática · Grafo de pré-requisitos</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
+:root { --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Inter', system-ui, sans-serif; background: #f5f6fa; overflow: hidden; color: #111; }
+.mono { font-family: var(--mono); font-feature-settings: "ss01", "cv01"; }
 
 /* ── header ─────────────────────────────────────────────────── */
 #header {
-  display: flex; align-items: center; gap: 20px;
-  padding: 0 20px; background: #fff; border-bottom: 1px solid #e5e7eb;
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 18px; background: #fff; border-bottom: 1px solid #e5e7eb;
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
   height: 48px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
@@ -30,7 +32,40 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f5f6fa; overflo
 .seg button.active { background: #2563eb; color: #fff; font-weight: 600; }
 .seg button:hover:not(.active) { background: #f3f4f6; color: #374151; }
 
-#stats { font-size: 11.5px; color: #9ca3af; margin-left: auto; }
+/* ── search ─────────────────────────────────────────────────── */
+#search-wrap { position: relative; }
+#search {
+  width: 230px; height: 28px; padding: 0 10px 0 28px;
+  border: 1px solid #e5e7eb; border-radius: 7px; background: #f9fafb;
+  font-family: inherit; font-size: 12px; color: #111; outline: none;
+  transition: border-color .12s, background .12s, box-shadow .12s;
+}
+#search:focus { background: #fff; border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+#search::placeholder { color: #9ca3af; }
+#search-icon {
+  position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+  width: 13px; height: 13px; pointer-events: none; color: #9ca3af;
+}
+#search-results {
+  position: absolute; top: 34px; left: 0; width: 360px;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  max-height: 360px; overflow-y: auto; display: none; z-index: 250;
+}
+.search-item {
+  padding: 9px 12px; border-bottom: 1px solid #f3f4f6; cursor: pointer;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.search-item:last-child { border-bottom: none; }
+.search-item.active, .search-item:hover { background: #f3f4f6; }
+.search-item-code { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: 0; }
+.search-item-hab {
+  font-size: 11px; color: #6b7280; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.search-empty { padding: 14px 12px; font-size: 12px; color: #9ca3af; font-style: italic; text-align: center; }
+
+#stats { font-size: 11.5px; color: #9ca3af; margin-left: auto; white-space: nowrap; }
 #reset-view {
   background: none; border: 1px solid #e5e7eb; border-radius: 6px;
   padding: 4px 11px; font-size: 12px; font-family: inherit; font-weight: 500;
@@ -43,7 +78,7 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f5f6fa; overflo
 
 /* ── drawer ─────────────────────────────────────────────────── */
 #drawer {
-  position: fixed; top: 48px; right: 0; bottom: 0; width: 296px;
+  position: fixed; top: 48px; right: 0; bottom: 0; width: 320px;
   background: #fff; border-left: 1px solid #e5e7eb;
   box-shadow: -4px 0 20px rgba(0,0,0,0.07);
   transform: translateX(100%); transition: transform .2s cubic-bezier(.4,0,.2,1);
@@ -52,10 +87,10 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f5f6fa; overflo
 #drawer.open { transform: translateX(0); }
 
 #drawer-head {
-  padding: 16px 16px 14px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0;
+  padding: 16px 18px 14px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0;
 }
 #drawer-top-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-#drawer-code { font-size: 16px; font-weight: 700; color: #111; letter-spacing: -0.02em; line-height: 1.2; }
+#drawer-code { font-family: var(--mono); font-size: 15px; font-weight: 700; color: #111; letter-spacing: 0; line-height: 1.2; }
 #drawer-close {
   background: none; border: none; font-size: 17px; color: #9ca3af;
   cursor: pointer; padding: 0 2px; line-height: 1; flex-shrink: 0; font-family: inherit;
@@ -70,21 +105,29 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f5f6fa; overflo
   font-size: 12px; color: #4b5563; line-height: 1.65; margin-top: 9px;
 }
 
-#drawer-body { flex: 1; overflow-y: auto; padding: 4px 16px 24px; }
-.drawer-section { margin-top: 18px; }
+#drawer-body { flex: 1; overflow-y: auto; padding: 4px 18px 24px; }
+.drawer-section { margin-top: 20px; }
 .drawer-section-title {
   font-size: 10px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.07em; color: #9ca3af; margin-bottom: 8px;
+  letter-spacing: 0.08em; color: #9ca3af; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.drawer-section-title .count {
+  margin-left: auto; font-weight: 500; color: #6b7280;
+  background: #f3f4f6; padding: 1px 6px; border-radius: 4px;
+  font-size: 10px; letter-spacing: 0; font-family: var(--mono);
 }
 .drawer-empty { font-size: 12px; color: #d1d5db; font-style: italic; }
 
-.drawer-item { padding: 8px 0; border-bottom: 1px solid #f9fafb; }
+.drawer-item { border-bottom: 1px solid #f9fafb; cursor: pointer; transition: background .08s; border-radius: 4px; margin: 0 -6px; padding: 8px 6px; }
 .drawer-item:last-child { border-bottom: none; }
+.drawer-item:hover { background: #f9fafb; }
 .item-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
-.item-code { font-size: 11.5px; font-weight: 600; letter-spacing: -0.01em; }
+.item-code { font-family: var(--mono); font-size: 11.5px; font-weight: 600; letter-spacing: 0; }
 .item-score {
-  font-size: 10.5px; font-weight: 600; color: #fff;
-  padding: 1px 7px; border-radius: 4px; flex-shrink: 0;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: #6b7280;
+  background: #f3f4f6; padding: 1px 7px; border-radius: 4px; flex-shrink: 0;
+  letter-spacing: 0;
 }
 .item-hab {
   font-size: 11px; color: #6b7280; line-height: 1.5;
@@ -98,19 +141,28 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f5f6fa; overflo
   padding: 11px 14px; max-width: 340px; font-size: 12.5px; line-height: 1.55;
   box-shadow: 0 4px 20px rgba(0,0,0,0.09); z-index: 300;
 }
-#tooltip .t-code { font-size: 14px; font-weight: 700; color: #111; margin-bottom: 2px; letter-spacing: -0.01em; }
+#tooltip .t-code { font-family: var(--mono); font-size: 13.5px; font-weight: 700; color: #111; margin-bottom: 2px; letter-spacing: 0; }
 #tooltip .t-ano {
   display: inline-flex; align-items: center;
   font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
   color: #fff; margin-left: 7px; vertical-align: middle; position: relative; top: -1px;
+}
+#tooltip .t-deg {
+  display: inline-block; font-size: 10.5px; color: #9ca3af; margin-left: 7px;
+  vertical-align: middle; position: relative; top: -1px;
 }
 #tooltip .t-hab { margin-top: 7px; color: #6b7280; font-size: 12px; }
 
 /* ── hint ────────────────────────────────────────────────────── */
 #hint {
   position: fixed; bottom: 14px; right: 18px; z-index: 100;
-  font-size: 10.5px; color: #d1d5db; text-align: right; line-height: 1.9;
+  font-size: 10.5px; color: #b5bcc9; text-align: right; line-height: 1.9;
   pointer-events: none; font-family: inherit;
+}
+#hint kbd {
+  font-family: var(--mono); font-size: 9.5px; background: #fff;
+  border: 1px solid #e5e7eb; border-radius: 3px; padding: 1px 5px;
+  color: #6b7280;
 }
 </style>
 </head>
@@ -118,14 +170,22 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f5f6fa; overflo
 
 <div id="header">
   <h1>BNCC Matemática <span style="color:#d1d5db;font-weight:400;margin:0 1px">·</span> <span style="font-weight:400;color:#6b7280">Grafo de pré-requisitos</span></h1>
+
+  <div id="search-wrap">
+    <svg id="search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="m11 11 3.2 3.2" stroke-linecap="round"/></svg>
+    <input id="search" type="search" placeholder="Buscar por código ou texto…" autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+
   <div class="seg-label">
-    Limiar de score
+    Score
     <div class="seg">
       <button data-val="0.5">≥ 0,50</button>
       <button data-val="0.75" class="active">≥ 0,75</button>
       <button data-val="1.0">= 1,00</button>
     </div>
   </div>
+
   <span id="stats"></span>
   <button id="reset-view" title="Resetar zoom e posição">Resetar visão</button>
 </div>
@@ -143,18 +203,27 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f5f6fa; overflo
   </div>
   <div id="drawer-body">
     <div class="drawer-section">
-      <div class="drawer-section-title">Pré-requisitos</div>
+      <div class="drawer-section-title">
+        Pré-requisitos
+        <span class="count" id="preds-count">0</span>
+      </div>
       <div id="drawer-preds"></div>
     </div>
     <div class="drawer-section">
-      <div class="drawer-section-title">Dependentes</div>
+      <div class="drawer-section-title">
+        Dependentes
+        <span class="count" id="succs-count">0</span>
+      </div>
       <div id="drawer-succs"></div>
     </div>
   </div>
 </div>
 
 <div id="tooltip"></div>
-<div id="hint">Hover — detalhes &nbsp;·&nbsp; Clique — gaveta &nbsp;·&nbsp; Fundo — fechar<br>Scroll — zoom &nbsp;·&nbsp; Arrastar — mover</div>
+<div id="hint">
+  <kbd>/</kbd> buscar &nbsp;·&nbsp; Hover detalhes &nbsp;·&nbsp; Clique gaveta<br>
+  Scroll zoom &nbsp;·&nbsp; Arrastar mover &nbsp;·&nbsp; <kbd>Esc</kbd> fechar
+</div>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
@@ -163,17 +232,22 @@ body { font-family: 'Inter', system-ui, sans-serif; background: #f5f6fa; overflo
 // ── canvas setup ───────────────────────────────────────────────
 const canvas = document.getElementById('graph');
 const ctx    = canvas.getContext('2d');
-const W = window.innerWidth;
-const H = window.innerHeight - 48;
+let W = window.innerWidth;
+let H = window.innerHeight - 48;
 const dpr = window.devicePixelRatio || 1;
-canvas.style.width  = W + 'px';
-canvas.style.height = H + 'px';
-canvas.width  = W * dpr;
-canvas.height = H * dpr;
-ctx.scale(dpr, dpr);
+function sizeCanvas() {
+  W = window.innerWidth; H = window.innerHeight - 48;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+}
+sizeCanvas();
+window.addEventListener('resize', () => { sizeCanvas(); draw(); });
 
 // ── constants ─────────────────────────────────────────────────
-const NODE_R = 6;
 const PAD_L  = 56, PAD_R = 56, PAD_T = 52, PAD_B = 22;
 const YEARS  = d3.range(1, 11);
 
@@ -195,6 +269,10 @@ const colorScale = d3.scaleOrdinal().domain(YEARS).range(PALETTE);
 // ── index ─────────────────────────────────────────────────────
 const nodeById = Object.fromEntries(graphData.nodes.map(n => [n.id, n]));
 
+// strip diacritics for search
+const normalize = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+graphData.nodes.forEach(n => { n._search = normalize(n.id + ' ' + n.habilidade); });
+
 // ── coordinate mapping ────────────────────────────────────────
 function sx(n) { return PAD_L + n.x * (W - PAD_L - PAD_R); }
 function sy(n) { return PAD_T + n.y * (H - PAD_T - PAD_B); }
@@ -202,9 +280,12 @@ function sy(n) { return PAD_T + n.y * (H - PAD_T - PAD_B); }
 // ── zoom ──────────────────────────────────────────────────────
 let transform = d3.zoomIdentity;
 
-// ── threshold ─────────────────────────────────────────────────
+// ── threshold + visible state ────────────────────────────────
 let currentThreshold = 0.75;
 let visibleLinks = [];
+let degree = {};   // total degree per node at current threshold
+let inAdj  = {};   // node -> array of {src, score} (incoming)
+let outAdj = {};   // node -> array of {tgt, score} (outgoing)
 
 document.querySelectorAll('.seg button').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -219,41 +300,54 @@ document.querySelectorAll('.seg button').forEach(btn => {
 
 function updateVisible() {
   visibleLinks = graphData.links.filter(l => l.score >= currentThreshold);
+  degree = {}; inAdj = {}; outAdj = {};
+  graphData.nodes.forEach(n => { degree[n.id] = 0; inAdj[n.id] = []; outAdj[n.id] = []; });
+  visibleLinks.forEach(l => {
+    degree[l.source]++; degree[l.target]++;
+    outAdj[l.source].push({ tgt: l.target, score: l.score });
+    inAdj[l.target].push({ src: l.source, score: l.score });
+  });
   document.getElementById('stats').textContent =
     `${visibleLinks.length.toLocaleString('pt-BR')} arestas · ${graphData.nodes.length} habilidades`;
 }
 
 // ── focus state ───────────────────────────────────────────────
-let focused = null, focusedNodes = null, focusedLinks = null;
+let focused = null;
+let focusedNodes = null;   // Set of {focus} ∪ direct prereqs ∪ direct dependents
+let focusedLinks = null;   // Set of edge indices touching focus
+let predsList = [];        // [{id, score}] sorted by score desc
+let succsList = [];
 
 function setFocus(nid) {
   if (nid === null) {
-    focused = null; focusedNodes = null; focusedLinks = null; return;
+    focused = null; focusedNodes = null; focusedLinks = null;
+    predsList = []; succsList = []; return;
   }
   focused = nid;
+  predsList = inAdj[nid].map(e  => ({ id: e.src, score: e.score })).sort((a, b) => b.score - a.score);
+  succsList = outAdj[nid].map(e => ({ id: e.tgt, score: e.score })).sort((a, b) => b.score - a.score);
+
   focusedNodes = new Set([nid]);
-  focusedLinks  = new Set();
+  predsList.forEach(p => focusedNodes.add(p.id));
+  succsList.forEach(p => focusedNodes.add(p.id));
+
+  focusedLinks = new Set();
   visibleLinks.forEach((l, i) => {
-    if (l.source === nid || l.target === nid) {
-      focusedNodes.add(l.source);
-      focusedNodes.add(l.target);
-      focusedLinks.add(i);
-    }
+    if (l.source === nid || l.target === nid) focusedLinks.add(i);
   });
 }
 
 // ── drawer ────────────────────────────────────────────────────
 const drawer = document.getElementById('drawer');
 
-function fmtScore(s) {
-  return s.toFixed(2);
-}
+function fmtScore(s) { return s.toFixed(2); }
 
-function itemHtml(node, score) {
-  return `<div class="drawer-item">
+function itemHtml(item) {
+  const node = nodeById[item.id];
+  return `<div class="drawer-item" data-id="${node.id}">
     <div class="item-row">
       <span class="item-code" style="color:${colorScale(node.ano)}">${node.id}</span>
-      <span class="item-score" style="background:#9ca3af">${fmtScore(score)}</span>
+      <span class="item-score">${fmtScore(item.score)}</span>
     </div>
     <div class="item-hab">${node.habilidade}</div>
   </div>`;
@@ -267,17 +361,25 @@ function populateDrawer(nid) {
   badge.style.background = colorScale(n.ano);
   document.getElementById('drawer-hab').textContent = n.habilidade;
 
-  const preds = visibleLinks.filter(l => l.target === nid).sort((a, b) => b.score - a.score);
-  const succs = visibleLinks.filter(l => l.source === nid).sort((a, b) => b.score - a.score);
+  document.getElementById('preds-count').textContent = predsList.length;
+  document.getElementById('succs-count').textContent = succsList.length;
 
-  document.getElementById('drawer-preds').innerHTML = preds.length
-    ? preds.map(l => itemHtml(nodeById[l.source], l.score)).join('')
+  document.getElementById('drawer-preds').innerHTML = predsList.length
+    ? predsList.map(itemHtml).join('')
     : '<div class="drawer-empty">Nenhum no limiar atual</div>';
 
-  document.getElementById('drawer-succs').innerHTML = succs.length
-    ? succs.map(l => itemHtml(nodeById[l.target], l.score)).join('')
+  document.getElementById('drawer-succs').innerHTML = succsList.length
+    ? succsList.map(itemHtml).join('')
     : '<div class="drawer-empty">Nenhum no limiar atual</div>';
 }
+
+// jump to a node in the drawer item list
+document.getElementById('drawer-body').addEventListener('click', e => {
+  const item = e.target.closest('.drawer-item');
+  if (!item) return;
+  const id = item.dataset.id;
+  jumpTo(id);
+});
 
 function openDrawer(nid) { populateDrawer(nid); drawer.classList.add('open'); }
 function closeDrawer()   { drawer.classList.remove('open'); }
@@ -287,24 +389,47 @@ document.getElementById('drawer-close').addEventListener('click', () => {
 });
 
 // ── draw helpers ──────────────────────────────────────────────
-function drawArrow(x1, y1, x2, y2, color) {
+function nodeRadius(n) {
+  if (!degree[n.id]) return 5;
+  // log-ish scale: 5 px (deg 0) → ~9 px (deg 30+)
+  return 5 + Math.min(4, Math.log2(degree[n.id] + 1) * 0.85);
+}
+
+function edgeStyleNormal(score) {
+  // score in [0.5, 1.0] → very light, thin
+  const t = (score - 0.5) / 0.5;
+  const w = 0.45 + t * 0.55;          // 0.45..1.00
+  const a = 0.09  + t * 0.13;         // 0.09..0.22
+  return { color: `rgba(110, 122, 142, ${a})`, width: w };
+}
+
+function edgeStyleFocus(score) {
+  const t = (score - 0.5) / 0.5;
+  const w = 0.9 + t * 0.7;            // 0.90..1.60
+  const a = 0.55 + t * 0.30;          // 0.55..0.85
+  return { color: `rgba(55, 65, 81, ${a})`, width: w };
+}
+
+const EDGE_FAINT = { color: 'rgba(176, 184, 200, 0.05)', width: 0.5 };
+
+function drawArrow(x1, y1, x2, y2, style, dstR) {
   const dx = x2 - x1, dy = y2 - y1;
   const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-  if (dist < (NODE_R + 2) * 2) return;
+  if (dist < (dstR + 4) * 2) return;
   const ux = dx / dist, uy = dy / dist;
-  const gap = NODE_R + 2;
+  const gap = dstR + 2;
   const ex = x2 - ux * gap, ey = y2 - uy * gap;
 
-  ctx.strokeStyle = color;
-  ctx.fillStyle   = color;
-  ctx.lineWidth   = 1.2;
+  ctx.strokeStyle = style.color;
+  ctx.fillStyle   = style.color;
+  ctx.lineWidth   = style.width;
 
   ctx.beginPath();
   ctx.moveTo(x1 + ux * gap, y1 + uy * gap);
   ctx.lineTo(ex, ey);
   ctx.stroke();
 
-  const aL = 7, aW = 3;
+  const aL = 6 + style.width, aW = 2.4 + style.width * 0.5;
   ctx.beginPath();
   ctx.moveTo(ex, ey);
   ctx.lineTo(ex - ux * aL + uy * aW, ey - uy * aL - ux * aW);
@@ -335,7 +460,7 @@ function draw() {
   // year labels
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.font = '600 11px "Inter", system-ui';
+  ctx.font = '600 11px "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace';
   YEARS.forEach(yr => {
     const x = PAD_L + (yr - 1) / 9 * (W - PAD_L - PAD_R);
     ctx.fillStyle = colorScale(yr);
@@ -343,34 +468,52 @@ function draw() {
   });
   ctx.restore();
 
-  // edges
-  const EDGE_NORMAL = 'rgba(176,184,200,0.38)';
-  const EDGE_FOCUS  = 'rgba(60,68,80,0.78)';
-  const EDGE_FAINT  = 'rgba(176,184,200,0.055)';
-
+  // edges — focused on top
+  const drawList = [];
   visibleLinks.forEach((l, i) => {
     const src = nodeById[l.source], tgt = nodeById[l.target];
     if (!src || !tgt) return;
-    drawArrow(
-      sx(src), sy(src), sx(tgt), sy(tgt),
-      focused === null ? EDGE_NORMAL : focusedLinks.has(i) ? EDGE_FOCUS : EDGE_FAINT
-    );
+    let style;
+    if (focused === null)            style = edgeStyleNormal(l.score);
+    else if (focusedLinks.has(i))    style = edgeStyleFocus(l.score);
+    else                             style = EDGE_FAINT;
+    drawList.push({ src, tgt, style, focus: focused !== null && focusedLinks.has(i) });
+  });
+  drawList.sort((a, b) => (a.focus === b.focus ? 0 : a.focus ? 1 : -1));
+  drawList.forEach(({ src, tgt, style }) => {
+    drawArrow(sx(src), sy(src), sx(tgt), sy(tgt), style, nodeRadius(tgt));
   });
 
-  // nodes
+  // nodes — dimmed background, then focused subgraph on top
   graphData.nodes.forEach(n => {
-    const dim = focused !== null && !focusedNodes.has(n.id);
-    ctx.globalAlpha = dim ? 0.06 : 1;
+    const inFocus = focusedNodes && focusedNodes.has(n.id);
+    if (focused !== null && inFocus) return; // second pass
+    ctx.globalAlpha = focused !== null ? 0.06 : 1;
     ctx.beginPath();
-    ctx.arc(sx(n), sy(n), NODE_R, 0, Math.PI * 2);
+    ctx.arc(sx(n), sy(n), nodeRadius(n), 0, Math.PI * 2);
     ctx.fillStyle = colorScale(n.ano);
     ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1.5;
     ctx.stroke();
   });
-  ctx.globalAlpha = 1;
 
+  if (focused !== null) {
+    ctx.globalAlpha = 1;
+    focusedNodes.forEach(id => {
+      const n = nodeById[id]; if (!n) return;
+      const isSelf = id === focused;
+      const r = nodeRadius(n) + (isSelf ? 1.6 : 0);
+      ctx.beginPath();
+      ctx.arc(sx(n), sy(n), r, 0, Math.PI * 2);
+      ctx.fillStyle = colorScale(n.ano);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = isSelf ? 2.2 : 1.8;
+      ctx.stroke();
+    });
+  }
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -406,9 +549,12 @@ canvas.addEventListener('mousemove', e => {
     if (hoveredId !== n.id) {
       hoveredId = n.id;
       const label = n.ano < 10 ? `${n.ano}º ano EF` : 'Ensino Médio';
+      const deg = degree[n.id] || 0;
       tooltip.style.display = 'block';
       tooltip.innerHTML =
-        `<div class="t-code">${n.id}<span class="t-ano" style="background:${colorScale(n.ano)}">${label}</span></div>` +
+        `<div class="t-code">${n.id}` +
+        `<span class="t-ano" style="background:${colorScale(n.ano)}">${label}</span>` +
+        `<span class="t-deg">${deg} conexões</span></div>` +
         `<div class="t-hab">${n.habilidade}</div>`;
     }
     const tw = 340, th = 120;
@@ -447,12 +593,98 @@ canvas.addEventListener('click', e => {
   draw();
 });
 
-// ── reset view ────────────────────────────────────────────────
+// ── search ────────────────────────────────────────────────────
+const searchEl = document.getElementById('search');
+const resultsEl = document.getElementById('search-results');
+let searchActive = -1;
+let searchMatches = [];
+
+function renderSearch(q) {
+  const norm = normalize(q.trim());
+  if (!norm) {
+    resultsEl.style.display = 'none';
+    return;
+  }
+  // rank: id-prefix > id-contains > hab-contains
+  const scored = [];
+  for (const n of graphData.nodes) {
+    const idn = normalize(n.id);
+    const hits = n._search.indexOf(norm);
+    if (hits === -1) continue;
+    let rank = 3;
+    if (idn.startsWith(norm)) rank = 0;
+    else if (idn.includes(norm)) rank = 1;
+    else if (normalize(n.habilidade).includes(norm)) rank = 2;
+    scored.push([rank, n]);
+  }
+  scored.sort((a, b) => a[0] - b[0] || a[1].id.localeCompare(b[1].id));
+  searchMatches = scored.slice(0, 30).map(s => s[1]);
+
+  if (!searchMatches.length) {
+    resultsEl.innerHTML = '<div class="search-empty">Nada encontrado</div>';
+    resultsEl.style.display = 'block';
+    return;
+  }
+  resultsEl.innerHTML = searchMatches.map((n, i) =>
+    `<div class="search-item${i === searchActive ? ' active' : ''}" data-id="${n.id}">
+       <div class="search-item-code" style="color:${colorScale(n.ano)}">${n.id}</div>
+       <div class="search-item-hab">${n.habilidade}</div>
+     </div>`
+  ).join('');
+  resultsEl.style.display = 'block';
+}
+
+searchEl.addEventListener('input', e => {
+  searchActive = e.target.value.trim() ? 0 : -1;
+  renderSearch(e.target.value);
+});
+searchEl.addEventListener('focus', e => { if (e.target.value) renderSearch(e.target.value); });
+searchEl.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); searchActive = Math.min(searchMatches.length - 1, searchActive + 1); renderSearch(searchEl.value); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); searchActive = Math.max(0, searchActive - 1); renderSearch(searchEl.value); }
+  else if (e.key === 'Enter' && searchMatches[searchActive]) { e.preventDefault(); jumpTo(searchMatches[searchActive].id); }
+  else if (e.key === 'Escape') { searchEl.blur(); resultsEl.style.display = 'none'; }
+});
+resultsEl.addEventListener('click', e => {
+  const item = e.target.closest('.search-item');
+  if (item) jumpTo(item.dataset.id);
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#search-wrap')) resultsEl.style.display = 'none';
+});
+
+// ── jump-to (pan + zoom + focus + drawer) ─────────────────────
+function jumpTo(nid) {
+  const n = nodeById[nid]; if (!n) return;
+  resultsEl.style.display = 'none';
+  searchEl.value = '';
+  setFocus(nid);
+  openDrawer(nid);
+
+  // Pan/zoom so the node sits roughly centered (drawer takes 320px on the right)
+  const drawerOffset = 320;
+  const targetK = Math.max(transform.k, 1.6);
+  const targetX = (W - drawerOffset) / 2 - sx(n) * targetK;
+  const targetY = H / 2 - sy(n) * targetK;
+  d3.select(canvas).transition().duration(450).call(
+    zoom.transform,
+    d3.zoomIdentity.translate(targetX, targetY).scale(targetK)
+  );
+}
+
+// ── zoom ──────────────────────────────────────────────────────
 const zoom = d3.zoom().scaleExtent([0.1, 14]).on('zoom', e => { transform = e.transform; draw(); });
 d3.select(canvas).call(zoom).on('dblclick.zoom', null);
 
 document.getElementById('reset-view').addEventListener('click', () => {
   d3.select(canvas).transition().duration(400).call(zoom.transform, d3.zoomIdentity);
+});
+
+// ── keyboard ──────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === '/') { e.preventDefault(); searchEl.focus(); }
+  else if (e.key === 'Escape') { setFocus(null); closeDrawer(); draw(); }
 });
 
 // ── init ──────────────────────────────────────────────────────
