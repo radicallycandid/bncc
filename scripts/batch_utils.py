@@ -266,60 +266,12 @@ def parse_sym_response(text: str) -> dict | None:
     return data
 
 
-def load_jsonl_results_sym() -> dict[str, dict]:
+def _load_jsonl_results(pass_n, process_record) -> dict[str, dict]:
     """
-    Lê todos os arquivos JSONL do pass simétrico.
-    Retorna {cid_direcional: result}, expandindo cada resultado em duas entradas:
-      "{a}__{b}" → resultado de A→B  (score_ab, label_ab)
-      "{b}__{a}" → resultado de B→A  (score_ba, label_ba)
-    onde a < b (ordem canônica usada no sym_custom_id).
-    """
-    state = load_state()
-    files = [
-        Path(b["results_file"])
-        for b in state["batches"]
-        if b["pass"] == "sym" and b["status"] == "downloaded"
-    ]
-    scores: dict[str, dict] = {}
-    n_errors = 0
-    for path in files:
-        for line in path.open(encoding="utf-8"):
-            result = json.loads(line)
-            cid = result["custom_id"]  # "A__B__sym"
-            if result["result"]["type"] != "succeeded":
-                n_errors += 1
-                continue
-            text = result["result"]["message"]["content"][0]["text"]
-            parsed = parse_sym_response(text)
-            if not parsed:
-                n_errors += 1
-                continue
-            # cid = "{menor}__{maior}__sym"
-            raw_cid = cid[: -len("__sym")]
-            codigo_a, codigo_b = raw_cid.split("__", 1)
-            scores[f"{codigo_a}__{codigo_b}"] = {
-                "score":     parsed["score_ab"],
-                "label":     parsed["label_ab"],
-                "reasoning": parsed["reasoning"],
-                "source":    "sym",
-            }
-            scores[f"{codigo_b}__{codigo_a}"] = {
-                "score":     parsed["score_ba"],
-                "label":     parsed["label_ba"],
-                "reasoning": parsed["reasoning"],
-                "source":    "sym",
-            }
-    total = len(scores) // 2 + n_errors
-    pct = (n_errors / total * 100) if total else 0.0
-    warn = "  ⚠️  TAXA ALTA — inspecione data/raw_results/" if pct > 5 else ""
-    print(f"  Pass sym: {len(scores) // 2:,} pares válidos, {n_errors:,} erros ({pct:.1f}%){warn}")
-    return scores
-
-
-def load_jsonl_results(pass_n: int) -> dict[str, dict]:
-    """
-    Lê todos os arquivos JSONL baixados para o pass indicado.
-    Retorna {custom_id: parsed_result}; ignora erros de API e falhas de parsing.
+    Helper compartilhado: lê os JSONLs baixados do pass indicado, descarta
+    falhas de API e delega o parse ao callback `process_record(cid, text)`,
+    que devolve uma lista de `(key, value)` para inserir no dict final.
+    Lista vazia → conta como erro de parse.
     """
     state = load_state()
     files = [
@@ -328,6 +280,7 @@ def load_jsonl_results(pass_n: int) -> dict[str, dict]:
         if b["pass"] == pass_n and b["status"] == "downloaded"
     ]
     scores: dict[str, dict] = {}
+    n_valid = 0
     n_errors = 0
     for path in files:
         for line in path.open(encoding="utf-8"):
@@ -337,16 +290,53 @@ def load_jsonl_results(pass_n: int) -> dict[str, dict]:
                 n_errors += 1
                 continue
             text = result["result"]["message"]["content"][0]["text"]
-            parsed = parse_response(text)
-            if parsed:
-                scores[cid] = parsed
-            else:
+            entries = process_record(cid, text)
+            if not entries:
                 n_errors += 1
-    total = len(scores) + n_errors
+                continue
+            n_valid += 1
+            for key, value in entries:
+                scores[key] = value
+    total = n_valid + n_errors
     pct = (n_errors / total * 100) if total else 0.0
     warn = "  ⚠️  TAXA ALTA — inspecione data/raw_results/" if pct > 5 else ""
-    print(f"  Pass {pass_n}: {len(scores):,} válidos, {n_errors:,} erros/unparseable ({pct:.1f}%){warn}")
+    print(f"  Pass {pass_n}: {n_valid:,} válidos, {n_errors:,} erros/unparseable ({pct:.1f}%){warn}")
     return scores
+
+
+def load_jsonl_results_sym() -> dict[str, dict]:
+    """
+    Lê todos os arquivos JSONL do pass simétrico.
+    Retorna {cid_direcional: result}, expandindo cada resultado em duas entradas:
+      "{a}__{b}" → resultado de A→B  (score_ab, label_ab)
+      "{b}__{a}" → resultado de B→A  (score_ba, label_ba)
+    onde a < b (ordem canônica usada no sym_custom_id).
+    """
+    def process(cid: str, text: str):
+        parsed = parse_sym_response(text)
+        if not parsed:
+            return []
+        raw_cid = cid[: -len("__sym")]  # "{menor}__{maior}__sym"
+        codigo_a, codigo_b = raw_cid.split("__", 1)
+        common = {"reasoning": parsed["reasoning"], "source": "sym"}
+        return [
+            (f"{codigo_a}__{codigo_b}", {"score": parsed["score_ab"], "label": parsed["label_ab"], **common}),
+            (f"{codigo_b}__{codigo_a}", {"score": parsed["score_ba"], "label": parsed["label_ba"], **common}),
+        ]
+
+    return _load_jsonl_results("sym", process)
+
+
+def load_jsonl_results(pass_n: int) -> dict[str, dict]:
+    """
+    Lê todos os arquivos JSONL baixados para o pass indicado.
+    Retorna {custom_id: parsed_result}; ignora erros de API e falhas de parsing.
+    """
+    def process(cid: str, text: str):
+        parsed = parse_response(text)
+        return [(cid, parsed)] if parsed else []
+
+    return _load_jsonl_results(pass_n, process)
 
 
 # ---------------------------------------------------------------------------
