@@ -36,6 +36,35 @@ from batch_utils import (
 SCORED_CSV = Path(__file__).parent.parent / "data" / "prereq_pairs_scored.csv"
 
 
+def canonicalize_sym_row(ca: str, cb: str, row_by_key: dict) -> dict | None:
+    """
+    Devolve o row do par não-ordenado {ca, cb} reescrito com codigo_a < codigo_b,
+    a ordem canônica usada por make_request_sym. Procura primeiro a direção
+    canônica em `row_by_key` e, se só achar a invertida, troca os campos a/b.
+
+    Retorna None se nenhuma das duas direções existir em row_by_key.
+
+    Premissa: o par é delta=0 (chamado apenas pelo pass simétrico). Garantida
+    por um assert que ataca o resultado final — pares com ano_a != ano_b
+    indicam que o caller filtrou errado.
+    """
+    ca_can, cb_can = sorted([ca, cb])
+    row_can = row_by_key.get((ca_can, cb_can)) or row_by_key.get((cb_can, ca_can))
+    if row_can is None:
+        return None
+    if ca_can != row_can["codigo_a"]:
+        row_can = {
+            "codigo_a":     ca_can,
+            "ano_a":        row_can["ano_b"],
+            "habilidade_a": row_can["habilidade_b"],
+            "codigo_b":     cb_can,
+            "ano_b":        row_can["ano_a"],
+            "habilidade_b": row_can["habilidade_a"],
+        }
+    assert row_can["ano_a"] == row_can["ano_b"], "sym pass requires delta=0 pairs"
+    return row_can
+
+
 def main() -> None:
     state = load_state()
 
@@ -83,22 +112,9 @@ def main() -> None:
         if s_ab + s_ba <= 1.0:
             continue
 
-        # Constrói row canônico com codigo_a < codigo_b para o request simétrico.
-        ca_can, cb_can = sorted([ca, cb])
-        row_can = row_by_key.get((ca_can, cb_can)) or row_by_key.get((cb_can, ca_can))
+        row_can = canonicalize_sym_row(ca, cb, row_by_key)
         if row_can is None:
             continue
-
-        if ca_can != row_can["codigo_a"]:
-            # Inverte o row para garantir ordem canônica no request
-            row_can = {
-                "codigo_a":    ca_can,
-                "ano_a":       row_can["ano_b"],
-                "habilidade_a": row_can["habilidade_b"],
-                "codigo_b":    cb_can,
-                "ano_b":       row_can["ano_a"],
-                "habilidade_b": row_can["habilidade_a"],
-            }
         inconsistent.append(row_can)
 
     print(f"Pares delta=0 inconsistentes: {len(inconsistent):,}")

@@ -591,3 +591,55 @@ class TestResolvePair:
         assert flag == "symmetric_consistent"
         assert score == 0.4
         assert source == "pass1"
+
+
+# ---------------------------------------------------------------------------
+# canonicalize_sym_row  (submit_pass_sym.py)
+# ---------------------------------------------------------------------------
+
+from submit_pass_sym import canonicalize_sym_row
+
+
+def _delta0_row(ca, cb, ano):
+    return {
+        "codigo_a": ca, "ano_a": str(ano), "habilidade_a": f"hab-{ca}",
+        "codigo_b": cb, "ano_b": str(ano), "habilidade_b": f"hab-{cb}",
+    }
+
+
+class TestCanonicalizeSymRow:
+    def test_already_canonical_returned_as_is(self):
+        # codigo_a < codigo_b, presente em row_by_key na direção canônica.
+        row_ab = _delta0_row("EF01MA01", "EF01MA02", 1)
+        row_by_key = {("EF01MA01", "EF01MA02"): row_ab}
+        out = canonicalize_sym_row("EF01MA01", "EF01MA02", row_by_key)
+        assert out is row_ab
+
+    def test_inverted_row_gets_swapped(self):
+        # Apenas a direção invertida (codigo_a > codigo_b) está indexada;
+        # a função deve trocar os campos a↔b para devolver o par canonicalizado.
+        row_ba = {
+            "codigo_a": "EF02MA09", "ano_a": "2", "habilidade_a": "hab-B",
+            "codigo_b": "EF02MA01", "ano_b": "2", "habilidade_b": "hab-A",
+        }
+        row_by_key = {("EF02MA09", "EF02MA01"): row_ba}
+        out = canonicalize_sym_row("EF02MA01", "EF02MA09", row_by_key)
+        assert out["codigo_a"] == "EF02MA01"
+        assert out["codigo_b"] == "EF02MA09"
+        assert out["habilidade_a"] == "hab-A"
+        assert out["habilidade_b"] == "hab-B"
+        # Inputs não foram mutados.
+        assert row_ba["codigo_a"] == "EF02MA09"
+
+    def test_returns_none_when_pair_absent(self):
+        assert canonicalize_sym_row("X", "Y", {}) is None
+
+    def test_asserts_delta_zero(self):
+        # Pré-condição do pass sym: ano_a == ano_b. Se o caller violar, a
+        # função levanta AssertionError em vez de silenciosamente seguir.
+        row = {
+            "codigo_a": "A", "ano_a": "1", "habilidade_a": "x",
+            "codigo_b": "B", "ano_b": "2", "habilidade_b": "y",
+        }
+        with pytest.raises(AssertionError):
+            canonicalize_sym_row("A", "B", {("A", "B"): row})
