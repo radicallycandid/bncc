@@ -8,7 +8,8 @@ O que este script testa:
   ✓ Resposta do modelo e parsing do JSON retornado
   ✓ Lógica de Pass 1 → borderline → Pass 2 → escalonamento
   ✓ Lógica de assembly (decide() de batch_utils)
-  ✓ Correção de simetria (apply_consistency() de batch_utils)
+  ✓ Correção de simetria (resolve_pair() de batch_utils, caminho algébrico —
+    o sample não roda o pass simétrico, então sym_results fica vazio)
 
 O que NÃO é testado aqui (mas funciona de forma análoga):
   - Submissão/polling/download da Batch API
@@ -36,11 +37,12 @@ from batch_utils import (
     MODEL_SECONDARY,
     BORDERLINE_LABELS,
     ESCALATION_THRESHOLD,
-    apply_consistency,
     custom_id,
+    decide,
     load_prompt,
     make_request,
     parse_response,
+    resolve_pair,
 )
 
 def score_bar(score: float) -> str:
@@ -124,12 +126,21 @@ def select_sample(nrows: int, seed: int = 42) -> list[dict]:
     return selected
 
 
-def run_two_pass(client, rows: list[dict], system: str, user_tpl: str, model_primary: str) -> dict:
+def run_passes(
+    client,
+    rows: list[dict],
+    system: str,
+    user_tpl: str,
+    model_primary: str,
+) -> tuple[dict, dict, dict]:
     """
-    Simula a lógica de Pass 1 → Pass 2 → Pass 3 de forma síncrona.
-    Retorna {custom_id: {score, label, source, reasoning}}.
+    Executa os três passes de forma síncrona e devolve (pass1, pass2, pass3),
+    cada um sendo {custom_id: parsed_result}. A resolução final é delegada a
+    decide() — este script só coleta os ingredientes brutos.
     """
-    results: dict[str, dict] = {}
+    pass1: dict[str, dict] = {}
+    pass2: dict[str, dict] = {}
+    pass3: dict[str, dict] = {}
     n = len(rows)
 
     print(f"\n── Pass 1 ({model_primary}, temp=0) — {n} pares ──")
@@ -137,62 +148,103 @@ def run_two_pass(client, rows: list[dict], system: str, user_tpl: str, model_pri
         cid = custom_id(row)
         res = call_model(client, row, system, user_tpl, model_primary, temperature=0)
         if res:
-            res["source"] = "pass1"
-            results[cid] = res
+            pass1[cid] = res
             bar = score_bar(res["score"])
             print(f"  [{i:2d}/{n}] {cid:<25s} {bar} {res['label']}")
         else:
             print(f"  [{i:2d}/{n}] {cid:<25s} PARSE ERROR")
         time.sleep(0.2)  # evita rate-limit em rajadas
 
-    # Pass 2: borderlines
-    borderlines = [
-        row for row in rows
-        if results.get(custom_id(row), {}).get("label")
-        in BORDERLINE_LABELS
-    ]
-    if borderlines:
-        print(f"\n── Pass 2 ({model_primary}, temp=0.5) — {len(borderlines)} borderlines ──")
-        for i, row in enumerate(borderlines, 1):
-            cid = custom_id(row)
-            res2 = call_model(client, row, system, user_tpl, model_primary, temperature=0.5)
-            if not res2:
-                print(f"  [{i}] {cid} PARSE ERROR (mantendo Pass 1)")
-                continue
-            s1 = results[cid]["score"]
-            s2 = res2["score"]
-            delta = abs(s1 - s2)
-            if delta <= ESCALATION_THRESHOLD:
-                avg = round((s1 + s2) / 2, 4)
-                results[cid] = {**res2, "score": avg, "source": "pass1+pass2_avg"}
-                results[cid].pop("label", None)
-                action = f"avg={avg}"
-            else:
-                # Escala para Sonnet
-                note = (
-                    f"[Nota: dois julgamentos discordaram.\n"
-                    f"Julgamento 1: {results[cid]['label']} ({s1}) — \"{results[cid]['reasoning']}\"\n"
-                    f"Julgamento 2: {res2['label']} ({s2}) — \"{res2['reasoning']}\"\n"
-                    "Avalie independentemente.]"
-                )
-                res3 = call_model(client, row, system, user_tpl, MODEL_SECONDARY,
-                                  temperature=0, context_note=note)
-                if res3:
-                    results[cid] = {**res3, "source": "pass3"}
-                    action = f"→ Sonnet: {res3['label']}"
-                else:
-                    avg = round((s1 + s2) / 2, 4)
-                    results[cid] = {**res2, "score": avg, "source": "pass1+pass2_fallback"}
-                    results[cid].pop("label", None)
-                    action = f"Sonnet falhou, fallback avg={avg}"
-            bar = score_bar(results[cid]["score"])
-            lbl = results[cid].get("label", "")
-            print(f"  [{i}] {cid:<25s} {bar} {lbl}  ({action})")
-            time.sleep(0.3)
-    else:
+    borderlines = [row for row in rows
+                   if pass1.get(custom_id(row), {}).get("label") in BORDERLINE_LABELS]
+    if not borderlines:
         print("\n  Nenhum borderline encontrado.")
+        return pass1, pass2, pass3
 
-    return results
+    print(f"\n── Pass 2 ({model_primary}, temp=0.5) — {len(borderlines)} borderlines ──")
+    for i, row in enumerate(borderlines, 1):
+        cid = custom_id(row)
+        res2 = call_model(client, row, system, user_tpl, model_primary, temperature=0.5)
+        if not res2:
+            print(f"  [{i}] {cid} PARSE ERROR (mantendo Pass 1)")
+            continue
+        pass2[cid] = res2
+
+        s1 = pass1[cid]["score"]
+        s2 = res2["score"]
+        if abs(s1 - s2) <= ESCALATION_THRESHOLD:
+            print(f"  [{i}] {cid:<25s} pass2={res2['label']} (avg será aplicado)")
+            time.sleep(0.3)
+            continue
+
+        # Escala para Sonnet — replica o context_note usado pelo submit_pass3
+        note = (
+            f"[Nota: dois julgamentos discordaram.\n"
+            f"Julgamento 1: {pass1[cid]['label']} ({s1}) — \"{pass1[cid]['reasoning']}\"\n"
+            f"Julgamento 2: {res2['label']} ({s2}) — \"{res2['reasoning']}\"\n"
+            "Avalie independentemente.]"
+        )
+        res3 = call_model(client, row, system, user_tpl, MODEL_SECONDARY,
+                          temperature=0, context_note=note)
+        if res3:
+            pass3[cid] = res3
+            print(f"  [{i}] {cid:<25s} pass2={res2['label']} → Sonnet: {res3['label']}")
+        else:
+            print(f"  [{i}] {cid:<25s} pass2={res2['label']} → Sonnet falhou (fallback avg)")
+        time.sleep(0.3)
+
+    return pass1, pass2, pass3
+
+
+def assemble_and_resolve(
+    rows: list[dict],
+    pass1: dict,
+    pass2: dict,
+    pass3: dict,
+) -> dict[str, dict]:
+    """
+    Roda decide() em cada par, depois resolve_pair() para corrigir simetria.
+    Como o sample não executa o pass simétrico, sym_results fica vazio e o
+    caminho algébrico é o que se aplica — equivalente ao apply_consistency
+    legado (que ficou apenas como atalho no path em batch).
+    """
+    decided: dict[str, tuple[float | None, str]] = {}
+    raw_scores: dict[tuple, float | None] = {}
+    for row in rows:
+        cid = custom_id(row)
+        score, source = decide(cid, pass1, pass2, pass3)
+        decided[cid] = (score, source)
+        raw_scores[(row["codigo_a"], row["codigo_b"])] = score
+
+    final: dict[str, dict] = {}
+    for row in rows:
+        ca, cb = row["codigo_a"], row["codigo_b"]
+        cid = f"{ca}__{cb}"
+        score, source = decided[cid]
+        if score is None:
+            continue
+
+        score_resolved, source_resolved, flag = resolve_pair(
+            raw_ab=score,
+            raw_ba=raw_scores.get((cb, ca)),
+            same_year=int(row["ano_a"]) == int(row["ano_b"]),
+            cid_ab=cid,
+            current_source=source,
+            sym_results={},
+        )
+
+        # Mescla reasoning/label dos passes brutos para o relatório
+        last = pass3.get(cid) or pass2.get(cid) or pass1.get(cid, {})
+        entry = {
+            "score": score_resolved if score_resolved is not None else score,
+            "source": source_resolved,
+            "consistency_flag": flag,
+            "reasoning": last.get("reasoning", ""),
+        }
+        if source_resolved == source and "label" in last and source in {"pass1", "pass3"}:
+            entry["label"] = last["label"]
+        final[cid] = entry
+    return final
 
 
 def print_report(rows: list[dict], final: dict) -> None:
@@ -204,8 +256,8 @@ def print_report(rows: list[dict], final: dict) -> None:
         res = final.get(cid)
         if not res:
             continue
-        bar  = score_bar(res["score"])
-        sym  = " [sym]" if res.get("consistency") == "corrected" else ""
+        bar = score_bar(res["score"])
+        sym = " [sym]" if res.get("consistency_flag") == "symmetric_corrected" else ""
         label_str = f" {res['label']}" if "label" in res else ""
         print(f"\n{cid}{sym}")
         print(f"  A (ano {row['ano_a']}): {row['habilidade_a'][:72]}…")
@@ -229,8 +281,10 @@ def main() -> None:
     for d, n in sorted(delta_dist.items()):
         print(f"  delta={d}: {n} pares")
 
-    results        = run_two_pass(client, rows, system, user_tpl, args.model_primary)
-    final, n_sym   = apply_consistency(rows, results)
+    pass1, pass2, pass3 = run_passes(client, rows, system, user_tpl, args.model_primary)
+    final = assemble_and_resolve(rows, pass1, pass2, pass3)
+
+    n_sym = sum(1 for r in final.values() if r.get("consistency_flag") == "symmetric_corrected")
     if n_sym:
         print(f"\n── Consistência: {n_sym // 2} par(es) simétrico(s) corrigido(s) ──")
     print_report(rows, final)
