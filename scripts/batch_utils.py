@@ -472,33 +472,3 @@ def resolve_pair(
         return sym["score"], sym["source"], "sym_scored"
     corrected = round((raw_ab + (1.0 - raw_ba)) / 2, 4)
     return corrected, current_source, "symmetric_corrected"
-
-
-def apply_consistency(rows: list[dict], results: dict) -> tuple[dict, int]:
-    """
-    Aplica correção de simetria a pares delta=0: score(A→B) = (raw(A→B) + (1 − raw(B→A))) / 2.
-
-    Corrige apenas quando raw(A→B) + raw(B→A) > 1.0 (inconsistência real).
-    Retorna (dicionário atualizado, número de pares corrigidos).
-    """
-    corrected = dict(results)
-    n_corrected = 0
-    for row in rows:
-        cid_ab = custom_id(row)
-        cid_ba = f"{row['codigo_b']}__{row['codigo_a']}"
-        if int(row["ano_a"]) != int(row["ano_b"]):
-            continue
-        if cid_ab not in results or cid_ba not in results:
-            continue
-        raw_ab = results[cid_ab]["score"]
-        raw_ba = results[cid_ba]["score"]
-        if raw_ab + raw_ba <= 1.0:
-            continue
-        c_ab = round((raw_ab + (1.0 - raw_ba)) / 2, 4)
-        c_ba = round((raw_ba + (1.0 - raw_ab)) / 2, 4)
-        corrected[cid_ab] = {**corrected[cid_ab], "score": c_ab, "consistency": "corrected"}
-        corrected[cid_ab].pop("label", None)
-        corrected[cid_ba] = {**corrected[cid_ba], "score": c_ba, "consistency": "corrected"}
-        corrected[cid_ba].pop("label", None)
-        n_corrected += 1
-    return corrected, n_corrected

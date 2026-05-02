@@ -205,8 +205,7 @@ def assemble_and_resolve(
     """
     Roda decide() em cada par, depois resolve_pair() para corrigir simetria.
     Como o sample não executa o pass simétrico, sym_results fica vazio e o
-    caminho algébrico é o que se aplica — equivalente ao apply_consistency
-    legado (que ficou apenas como atalho no path em batch).
+    caminho algébrico é o que se aplica.
     """
     decided: dict[str, tuple[float | None, str]] = {}
     raw_scores: dict[tuple, float | None] = {}

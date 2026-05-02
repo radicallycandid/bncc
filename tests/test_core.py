@@ -10,7 +10,6 @@ import batch_utils
 from batch_utils import (
     LABEL_TO_SCORE,
     PROMPT_FILE_SYM,
-    apply_consistency,
     custom_id,
     decide,
     fill_user,
@@ -203,74 +202,6 @@ class TestCandidatePairs:
         assert dist.get(2) == 1
         assert 0 not in dist
         assert 3 not in dist
-
-
-# ---------------------------------------------------------------------------
-# apply_consistency  (run_sample.py)
-# ---------------------------------------------------------------------------
-
-def _result(score, label="INCERTO", source="pass1"):
-    return {"score": score, "label": label, "source": source, "reasoning": "x"}
-
-
-def _row(ca, ano_a, cb, ano_b):
-    return {"codigo_a": ca, "ano_a": str(ano_a), "codigo_b": cb, "ano_b": str(ano_b),
-            "habilidade_a": "x", "habilidade_b": "x"}
-
-
-class TestApplyConsistency:
-    def test_symmetry_property_holds(self):
-        # Propriedade fundamental: corrected(A→B) + corrected(B→A) = 1.0
-        rows = [_row("A", 1, "B", 1), _row("B", 1, "A", 1)]
-        results = {"A__B": _result(0.75), "B__A": _result(0.75)}
-        c, _ = apply_consistency(rows, results)
-        assert abs(c["A__B"]["score"] + c["B__A"]["score"] - 1.0) < 1e-9
-
-    def test_inconsistent_pair_corrected(self):
-        # Ambos altos (soma > 1) → correção aplicada
-        rows = [_row("A", 1, "B", 1), _row("B", 1, "A", 1)]
-        results = {"A__B": _result(0.75), "B__A": _result(0.75)}
-        c, _ = apply_consistency(rows, results)
-        assert c["A__B"]["score"] == 0.5
-        assert c["A__B"].get("consistency") == "corrected"
-
-    def test_consistent_pair_not_corrected(self):
-        # raw(A→B)=0.75, raw(B→A)=0.25 → soma=1.0 ≤ 1.0, sem correção
-        rows = [_row("A", 1, "B", 1), _row("B", 1, "A", 1)]
-        results = {"A__B": _result(0.75), "B__A": _result(0.25)}
-        c, _ = apply_consistency(rows, results)
-        assert c["A__B"]["score"] == 0.75
-        assert "consistency" not in c["A__B"]
-
-    def test_both_low_not_corrected(self):
-        # raw(A→B)=0.25, raw(B→A)=0.25 → soma=0.5 ≤ 1.0, sem correção
-        rows = [_row("A", 1, "B", 1), _row("B", 1, "A", 1)]
-        results = {"A__B": _result(0.25), "B__A": _result(0.25)}
-        c, _ = apply_consistency(rows, results)
-        assert c["A__B"]["score"] == 0.25
-        assert "consistency" not in c["A__B"]
-
-    def test_different_years_skipped(self):
-        rows = [_row("A", 1, "B", 2)]
-        results = {"A__B": _result(1.0)}
-        c, _ = apply_consistency(rows, results)
-        assert "consistency" not in c["A__B"]
-
-    def test_label_removed_after_correction(self):
-        rows = [_row("A", 1, "B", 1), _row("B", 1, "A", 1)]
-        results = {"A__B": _result(0.75), "B__A": _result(0.75)}
-        c, _ = apply_consistency(rows, results)
-        assert "label" not in c["A__B"]
-
-    def test_missing_partner_skipped(self):
-        # delta=0 mas só o par A→B está em results; B→A ausente.
-        # A função deve não tentar corrigir nem crashar.
-        rows = [_row("A", 1, "B", 1)]
-        results = {"A__B": _result(0.75)}
-        c, n_corrected = apply_consistency(rows, results)
-        assert c["A__B"]["score"] == 0.75
-        assert "consistency" not in c["A__B"]
-        assert n_corrected == 0
 
 
 # ---------------------------------------------------------------------------
